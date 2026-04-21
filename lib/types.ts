@@ -1,6 +1,14 @@
 export type EquipType = 'cold' | 'stove' | 'grill' | 'fryer' | 'straw'
 export type OrderStatus = 'pending' | 'cooking' | 'served'
 
+export interface Equipment {
+  id: string
+  name: string
+  type: EquipType
+  slots: number
+  active: boolean
+}
+
 export interface MenuItem {
   id: string
   name: string
@@ -32,6 +40,7 @@ export interface ShopSettings {
   warningThresholdSec: number
   dangerThresholdSec: number
   oneOperatorMode: boolean
+  soundAlert: boolean
 }
 
 export const DEFAULT_SETTINGS: ShopSettings = {
@@ -45,6 +54,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   warningThresholdSec: 240,
   dangerThresholdSec: 480,
   oneOperatorMode: false,
+  soundAlert: true,
 }
 
 export const DEFAULT_MENU: MenuItem[] = [
@@ -56,4 +66,13 @@ export const DEFAULT_MENU: MenuItem[] = [
   { id: 'm6', name: '藁焼きカツオ',   cookTime: 15, equip: 'straw', attn: 4, bonus: 0, active: true },
   { id: 'm7', name: '冷奴',          cookTime: 1,  equip: 'cold',  attn: 0, bonus: 0, active: true },
   { id: 'm8', name: 'もつ煮込み',     cookTime: 6,  equip: 'stove', attn: 1, bonus: 0, active: true },
+]
+
+export const DEFAULT_EQUIPMENT: Equipment[] = [
+  { id: 'e1', name: 'コンロ1', type: 'stove', slots: 1, active: true },
+  { id: 'e2', name: 'コンロ2', type: 'stove', slots: 1, active: true },
+  { id: 'e3', name: 'コンロ3', type: 'stove', slots: 1, active: true },
+  { id: 'e4', name: 'グリル1', type: 'grill', slots: 2, active: true },
+  { id: 'e5', name: 'フライヤー', type: 'fryer', slots: 1, active: true },
+  { id: 'e6', name: '藁焼き台', type: 'straw', slots: 1, active: true },
 ]

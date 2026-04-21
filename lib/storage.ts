@@ -1,7 +1,13 @@
-import type { MenuItem, OrderItem, ShopSettings } from './types'
-import { DEFAULT_MENU, DEFAULT_SETTINGS } from './types'
+import type { MenuItem, OrderItem, ShopSettings, Equipment } from './types'
+import { DEFAULT_MENU, DEFAULT_SETTINGS, DEFAULT_EQUIPMENT } from './types'
 
-const KEYS = { MENU: 'kitchen_menu', SETTINGS: 'kitchen_settings', ORDERS: 'kitchen_orders', NEXT_ID: 'kitchen_next_id' }
+const KEYS = {
+  MENU: 'kitchen_menu',
+  SETTINGS: 'kitchen_settings',
+  ORDERS: 'kitchen_orders',
+  NEXT_ID: 'kitchen_next_id',
+  EQUIPMENT: 'kitchen_equipment',
+}
 
 export function loadMenu(): MenuItem[] {
   if (typeof window === 'undefined') return DEFAULT_MENU
@@ -26,3 +32,14 @@ export function loadNextId(): number {
   return parseInt(localStorage.getItem(KEYS.NEXT_ID) ?? '1')
 }
 export function saveNextId(id: number): void { localStorage.setItem(KEYS.NEXT_ID, String(id)) }
+
+export function loadEquipment(): Equipment[] {
+  if (typeof window === 'undefined') return DEFAULT_EQUIPMENT
+  try { const s = localStorage.getItem(KEYS.EQUIPMENT); return s ? JSON.parse(s) : DEFAULT_EQUIPMENT } catch { return DEFAULT_EQUIPMENT }
+}
+export function saveEquipment(eq: Equipment[]): void { localStorage.setItem(KEYS.EQUIPMENT, JSON.stringify(eq)) }
+
+export function clearAllOrders(): void {
+  localStorage.removeItem(KEYS.ORDERS)
+  localStorage.removeItem(KEYS.NEXT_ID)
+}
