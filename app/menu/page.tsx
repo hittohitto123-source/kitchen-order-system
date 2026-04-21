@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { MenuItem, EquipType, Equipment } from '../../lib/types'
 import { saveMenu, loadEquipmentFromDB, loadMenuFromDB } from '../../lib/storage'
+import { supabase } from '../../lib/supabase'
 
 const EQUIP_LABEL: Record<string, string> = {
   cold: '冷菜（火不要）', stove: 'コンロ', grill: 'グリル', fryer: 'フライヤー', straw: '藁焼き'
@@ -19,6 +20,7 @@ export default function MenuPage() {
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [dbStatus, setDbStatus] = useState<'unknown' | 'ok' | 'error'>('unknown')
 
   const fetchAll = async () => {
     const [menuData, equipData] = await Promise.all([
@@ -31,6 +33,15 @@ export default function MenuPage() {
   }
 
   useEffect(() => {
+    supabase.from('menus').select('count').then(({ data, error }) => {
+      if (error) {
+        console.error('DB接続エラー:', error)
+        setDbStatus('error')
+      } else {
+        console.log('DB接続成功')
+        setDbStatus('ok')
+      }
+    })
     fetchAll().then(() => setLoading(false))
   }, [])
 
@@ -69,7 +80,12 @@ export default function MenuPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white p-4">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-xl font-bold text-amber-400">メニュー管理</h1>
+        <div>
+          <h1 className="text-xl font-bold text-amber-400">メニュー管理</h1>
+          <span className={`text-xs ${dbStatus === 'ok' ? 'text-green-400' : dbStatus === 'error' ? 'text-red-400' : 'text-gray-500'}`}>
+            {dbStatus === 'ok' ? 'DB接続済' : dbStatus === 'error' ? 'DB接続エラー' : '確認中...'}
+          </span>
+        </div>
         <div className="flex gap-2">
           <button onClick={handleSync}
             className={`px-3 py-2 rounded-lg text-sm font-bold transition-colors ${syncing ? 'bg-blue-900 text-blue-300' : 'bg-blue-700 hover:bg-blue-600 text-white'}`}>
