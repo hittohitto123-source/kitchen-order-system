@@ -169,7 +169,7 @@ export default function KitchenPage() {
 
       <div className="flex justify-between items-center mb-3">
         <div>
-          <h1 className="text-lg font-bold text-amber-400">厨房司令塔 PRO</h1>
+          <h1 className="text-lg font-bold text-amber-400">KitchenQ</h1>
           {!dbSynced && <span className="text-xs text-gray-500">DB同期中...</span>}
           {dbSynced && <span className="text-xs text-green-600">DB同期済</span>}
         </div>
@@ -227,7 +227,7 @@ export default function KitchenPage() {
               {o.isBatchLeader && (
                 <div className="flex items-center gap-2 mb-1 mt-1">
                   <span className="text-xs text-green-400 font-bold bg-green-950 border border-green-800 px-2 py-0.5 rounded-full">
-                    ★ まとめて調理 {o.batchCount}件
+                    まとめて調理 {o.batchCount}件
                   </span>
                 </div>
               )}
@@ -286,7 +286,7 @@ export default function KitchenPage() {
           </select>
           <button onClick={addOrder}
             className="bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-bold px-5 py-3 rounded-lg text-sm flex-shrink-0">
-            ＋注文
+            +注文
           </button>
         </div>
       </div>
