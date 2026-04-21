@@ -21,11 +21,13 @@ export default function MenuPage() {
   const [syncing, setSyncing] = useState(false)
 
   const fetchAll = async () => {
-    const [menuData, equipData] = await Promise.all([loadMenuFromDB(), loadEquipmentFromDB()])
+    const [menuData, equipData] = await Promise.all([
+      loadMenuFromDB(),
+      loadEquipmentFromDB()
+    ])
     setMenu(menuData)
     setEquipment(equipData.filter(e => e.active))
-    localStorage.setItem('kitchen_menu', JSON.stringify(menuData))
-    localStorage.setItem('kitchen_equipment', JSON.stringify(equipData))
+    return { menuData, equipData }
   }
 
   useEffect(() => {
@@ -49,12 +51,19 @@ export default function MenuPage() {
       ? menu.map(m => m.id === editId ? { ...m, ...form } : m)
       : [...menu, { id: 'm' + Date.now(), ...form, active: true }]
     await commit(updated)
-    setForm(EMPTY); setEditId(null)
-    setSaved(true); setTimeout(() => setSaved(false), 2000)
+    setForm(EMPTY)
+    setEditId(null)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
   }
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">読み込み中...</div>
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">
+      <div className="text-center">
+        <div className="text-amber-400 font-bold text-xl mb-2">KitchenQ</div>
+        <div className="text-gray-400 text-sm">読み込み中...</div>
+      </div>
+    </div>
   )
 
   return (
