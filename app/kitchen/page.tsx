@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import type { OrderItem, MenuItem, ShopSettings } from '../../lib/types'
-import { loadOrders, saveOrders, loadMenu, loadSettings, saveSettings, loadNextId, saveNextId, clearAllOrders, loadOrdersFromDB, logAnalytics } from '../../lib/storage'
+import { loadOrders, saveOrders, loadSettings, saveSettings, loadNextId, saveNextId, clearAllOrders, loadOrdersFromDB, loadMenuFromDB, logAnalytics } from '../../lib/storage'
 import { buildSchedule } from '../../lib/priorityEngine'
 
 const EQUIP_LABEL: Record<string, string> = {
@@ -46,18 +46,19 @@ export default function KitchenPage() {
   const alertedTables = useRef<Set<number>>(new Set())
 
   useEffect(() => {
-    const m = loadMenu().filter(m => m.active)
-    setMenuList(m)
-    if (m.length) setSelMenu(m[0].id)
     setSettings(loadSettings())
-    const localOrders = loadOrders()
-    setOrders(localOrders)
-    loadOrdersFromDB().then(dbOrders => {
+    Promise.all([loadMenuFromDB(), loadOrdersFromDB()]).then(([menuData, dbOrders]) => {
+      const activeMenu = menuData.filter(m => m.active)
+      setMenuList(activeMenu)
+      localStorage.setItem('kitchen_menu', JSON.stringify(menuData))
+      if (activeMenu.length) setSelMenu(activeMenu[0].id)
       if (dbOrders.length > 0) {
         setOrders(dbOrders)
         saveOrders(dbOrders)
         const maxId = Math.max(...dbOrders.map(o => o.id), 0)
         saveNextId(maxId + 1)
+      } else {
+        setOrders(loadOrders())
       }
       setDbSynced(true)
     })
@@ -131,8 +132,13 @@ export default function KitchenPage() {
     setShowCloseConfirm(false)
   }
 
-  if (!settings) return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">読み込み中...</div>
+  if (!settings || !dbSynced) return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">
+      <div className="text-center">
+        <div className="text-amber-400 font-bold text-xl mb-2">KitchenQ</div>
+        <div className="text-gray-400 text-sm">データを同期中...</div>
+      </div>
+    </div>
   )
 
   const scheduled = buildSchedule(orders, settings, now)
@@ -170,8 +176,7 @@ export default function KitchenPage() {
       <div className="flex justify-between items-center mb-3">
         <div>
           <h1 className="text-lg font-bold text-amber-400">KitchenQ</h1>
-          {!dbSynced && <span className="text-xs text-gray-500">DB同期中...</span>}
-          {dbSynced && <span className="text-xs text-green-600">DB同期済</span>}
+          <span className="text-xs text-green-600">DB同期済</span>
         </div>
         <div className="flex gap-1.5 items-center flex-wrap justify-end">
           <button onClick={toggleSound}
