@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import type { OrderItem, MenuItem, ShopSettings } from '../../lib/types'
-import { loadOrders, saveOrders, loadMenu, loadSettings, saveSettings, loadNextId, saveNextId, clearAllOrders } from '../../lib/storage'
+import { loadOrders, saveOrders, loadMenu, loadSettings, saveSettings, loadNextId, saveNextId, clearAllOrders, loadOrdersFromDB, logAnalytics } from '../../lib/storage'
 import { buildSchedule } from '../../lib/priorityEngine'
 
 const EQUIP_LABEL: Record<string, string> = {
@@ -42,14 +42,25 @@ export default function KitchenPage() {
   const [selTable, setSelTable] = useState('1')
   const [selMenu, setSelMenu] = useState('')
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  const [dbSynced, setDbSynced] = useState(false)
   const alertedTables = useRef<Set<number>>(new Set())
 
   useEffect(() => {
     const m = loadMenu().filter(m => m.active)
     setMenuList(m)
     if (m.length) setSelMenu(m[0].id)
-    setOrders(loadOrders())
     setSettings(loadSettings())
+    const localOrders = loadOrders()
+    setOrders(localOrders)
+    loadOrdersFromDB().then(dbOrders => {
+      if (dbOrders.length > 0) {
+        setOrders(dbOrders)
+        saveOrders(dbOrders)
+        const maxId = Math.max(...dbOrders.map(o => o.id), 0)
+        saveNextId(maxId + 1)
+      }
+      setDbSynced(true)
+    })
   }, [])
 
   useEffect(() => {
@@ -84,16 +95,20 @@ export default function KitchenPage() {
     saveNextId(id + 1)
   }
 
-  const setStatus = (id: number, status: OrderItem['status']) => {
+  const setStatus = async (id: number, status: OrderItem['status']) => {
+    const now = Date.now()
     const updated = orders.map(o => o.id === id ? {
       ...o, status,
-      startedAt: status === 'cooking' ? Date.now() : o.startedAt,
-      servedAt: status === 'served' ? Date.now() : o.servedAt,
+      startedAt: status === 'cooking' ? now : o.startedAt,
+      servedAt: status === 'served' ? now : o.servedAt,
     } : o)
     commit(updated)
     if (status === 'served') {
-      const order = orders.find(o => o.id === id)
-      if (order) alertedTables.current.delete(order.table)
+      const order = updated.find(o => o.id === id)
+      if (order) {
+        alertedTables.current.delete(order.table)
+        await logAnalytics(order)
+      }
     }
   }
 
@@ -137,7 +152,6 @@ export default function KitchenPage() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-3">
-
       {showCloseConfirm && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:'1rem'}}>
           <div className="bg-gray-900 rounded-2xl p-6 max-w-sm w-full border border-red-700">
@@ -154,7 +168,11 @@ export default function KitchenPage() {
       )}
 
       <div className="flex justify-between items-center mb-3">
-        <h1 className="text-lg font-bold text-amber-400">厨房司令塔 PRO</h1>
+        <div>
+          <h1 className="text-lg font-bold text-amber-400">厨房司令塔 PRO</h1>
+          {!dbSynced && <span className="text-xs text-gray-500">DB同期中...</span>}
+          {dbSynced && <span className="text-xs text-green-600">DB同期済</span>}
+        </div>
         <div className="flex gap-1.5 items-center flex-wrap justify-end">
           <button onClick={toggleSound}
             className={`px-2 py-1.5 rounded-lg text-xs font-bold ${settings.soundAlert ? 'bg-blue-800 text-blue-300' : 'bg-gray-700 text-gray-400'}`}>
@@ -164,6 +182,7 @@ export default function KitchenPage() {
           <Link href="/menu" className="bg-gray-700 hover:bg-gray-600 text-white px-2 py-1.5 rounded-lg text-xs font-bold">メニュー</Link>
           <Link href="/equipment" className="bg-gray-700 hover:bg-gray-600 text-white px-2 py-1.5 rounded-lg text-xs font-bold">設備</Link>
           <Link href="/settings" className="bg-gray-700 hover:bg-gray-600 text-white px-2 py-1.5 rounded-lg text-xs font-bold">設定</Link>
+          <Link href="/analytics" className="bg-gray-700 hover:bg-gray-600 text-white px-2 py-1.5 rounded-lg text-xs font-bold">分析</Link>
           <button onClick={toggleOneOp}
             className={`px-2 py-1.5 rounded-full text-xs font-bold ${settings.oneOperatorMode ? 'bg-amber-500 text-black' : 'bg-gray-700 text-white'}`}>
             {settings.oneOperatorMode ? 'ワンオペ' : '通常'}
