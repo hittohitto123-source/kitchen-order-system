@@ -2,26 +2,26 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import type { MenuItem, EquipType, Equipment } from '../../lib/types'
-import { loadMenu, saveMenu, loadEquipment } from '../../lib/storage'
+import type { MenuItem, EquipType } from '../../lib/types'
+import { loadMenu, saveMenu } from '../../lib/storage'
 
-const EQUIP_LABEL: Record<string, string> = {
-  cold: '冷菜（火不要）', stove: 'コンロ', grill: 'グリル', fryer: 'フライヤー', straw: '藁焼き'
-}
+const EQUIP_OPTIONS: { value: EquipType; label: string }[] = [
+  { value: 'cold',  label: '冷菜（火不要）' },
+  { value: 'stove', label: 'コンロ' },
+  { value: 'grill', label: 'グリル' },
+  { value: 'fryer', label: 'フライヤー' },
+  { value: 'straw', label: '藁焼き' },
+]
 
 const EMPTY = { name: '', cookTime: 5, equip: 'cold' as EquipType, attn: 0, bonus: 0 }
 
 export default function MenuPage() {
   const [menu, setMenu] = useState<MenuItem[]>([])
-  const [equipment, setEquipment] = useState<Equipment[]>([])
   const [form, setForm] = useState(EMPTY)
   const [editId, setEditId] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
-  useEffect(() => {
-    setMenu(loadMenu())
-    setEquipment(loadEquipment().filter(e => e.active))
-  }, [])
+  useEffect(() => { setMenu(loadMenu()) }, [])
 
   const commit = (updated: MenuItem[]) => { setMenu(updated); saveMenu(updated) }
 
@@ -34,8 +34,6 @@ export default function MenuPage() {
     setForm(EMPTY); setEditId(null)
     setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
-
-  const equipTypes = Array.from(new Set(equipment.map(e => e.type)))
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-4">
@@ -54,7 +52,8 @@ export default function MenuPage() {
         <div className="flex flex-col gap-3">
           <div>
             <label className="text-xs text-gray-400 mb-1 block">料理名</label>
-            <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            <input type="text" value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               placeholder="例：唐揚げ"
               className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 text-sm border border-gray-700 focus:border-amber-500 outline-none" />
           </div>
@@ -65,37 +64,36 @@ export default function MenuPage() {
             <input type="range" min={1} max={30} step={1} value={form.cookTime}
               onChange={e => setForm(f => ({ ...f, cookTime: Number(e.target.value) }))}
               className="w-full accent-amber-500" />
-            <div className="flex justify-between text-xs text-gray-600 mt-1"><span>1分</span><span>15分</span><span>30分</span></div>
+            <div className="flex justify-between text-xs text-gray-600 mt-1">
+              <span>1分</span><span>15分</span><span>30分</span>
+            </div>
           </div>
           <div>
             <label className="text-xs text-gray-400 mb-2 block">調理設備</label>
             <div className="grid grid-cols-3 gap-2">
-              {equipTypes.length > 0 ? equipTypes.map(type => (
-                <button key={type} onClick={() => setForm(f => ({ ...f, equip: type }))}
-                  className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${form.equip === type ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>
-                  {EQUIP_LABEL[type]}
+              {EQUIP_OPTIONS.map(opt => (
+                <button key={opt.value}
+                  onClick={() => setForm(f => ({ ...f, equip: opt.value }))}
+                  className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${
+                    form.equip === opt.value ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}>
+                  {opt.label}
                 </button>
-              )) : (
-                Object.entries(EQUIP_LABEL).map(([value, label]) => (
-                  <button key={value} onClick={() => setForm(f => ({ ...f, equip: value as EquipType }))}
-                    className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${form.equip === value ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>
-                    {label}
-                  </button>
-                ))
-              )}
+              ))}
             </div>
-            {equipTypes.length > 0 && (
-              <div className="text-xs text-gray-600 mt-1">設備管理で登録した設備が表示されています</div>
-            )}
           </div>
           <div>
             <label className="text-xs text-gray-400 mb-1 block">
-              付きっきり度：<span className="text-amber-400 font-bold ml-1">{['不要','低','少し','普通','高い','常に'][form.attn]}</span>
+              付きっきり度：<span className="text-amber-400 font-bold ml-1">
+                {['不要','低','少し','普通','高い','常に'][form.attn]}
+              </span>
             </label>
             <div className="flex gap-2">
               {[0,1,2,3,4,5].map(v => (
                 <button key={v} onClick={() => setForm(f => ({ ...f, attn: v }))}
-                  className={`flex-1 py-2 rounded-lg text-sm font-bold ${form.attn === v ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-400'}`}>
+                  className={`flex-1 py-2 rounded-lg text-sm font-bold ${
+                    form.attn === v ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-400'
+                  }`}>
                   {v}
                 </button>
               ))}
@@ -123,12 +121,14 @@ export default function MenuPage() {
         </h2>
         {menu.map(item => (
           <div key={item.id}
-            className={`flex items-center gap-3 p-3 rounded-xl mb-2 border ${item.active ? 'bg-gray-800 border-gray-700' : 'bg-gray-900 border-gray-800 opacity-40'}`}>
+            className={`flex items-center gap-3 p-3 rounded-xl mb-2 border ${
+              item.active ? 'bg-gray-800 border-gray-700' : 'bg-gray-900 border-gray-800 opacity-40'
+            }`}>
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="font-bold">{item.name}</span>
                 <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">
-                  {EQUIP_LABEL[item.equip]}
+                  {EQUIP_OPTIONS.find(e => e.value === item.equip)?.label}
                 </span>
               </div>
               <div className="text-xs text-gray-400 mt-1">
@@ -138,7 +138,9 @@ export default function MenuPage() {
             </div>
             <div className="flex gap-1">
               <button onClick={() => commit(menu.map(m => m.id === item.id ? { ...m, active: !m.active } : m))}
-                className={`text-xs px-2 py-1 rounded-lg font-bold ${item.active ? 'bg-green-800 text-green-300' : 'bg-gray-700 text-gray-400'}`}>
+                className={`text-xs px-2 py-1 rounded-lg font-bold ${
+                  item.active ? 'bg-green-800 text-green-300' : 'bg-gray-700 text-gray-400'
+                }`}>
                 {item.active ? '有効' : '無効'}
               </button>
               <button onClick={() => { setEditId(item.id); setForm({ name: item.name, cookTime: item.cookTime, equip: item.equip, attn: item.attn, bonus: item.bonus }) }}
