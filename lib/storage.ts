@@ -24,6 +24,12 @@ export function saveMenu(menu: MenuItem[]): void {
   })
 }
 
+export async function loadMenuFromDB(): Promise<MenuItem[]> {
+  const { data } = await supabase.from('menus').select('*').eq('tenant_id', TENANT_ID)
+  if (!data || data.length === 0) return DEFAULT_MENU
+  return data.map(({ tenant_id, created_at, ...rest }) => rest as MenuItem)
+}
+
 export function loadSettings(): ShopSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS
   try { const s = localStorage.getItem(KEYS.SETTINGS); return s ? { ...DEFAULT_SETTINGS, ...JSON.parse(s) } : DEFAULT_SETTINGS } catch { return DEFAULT_SETTINGS }
@@ -32,6 +38,12 @@ export function loadSettings(): ShopSettings {
 export function saveSettings(s: ShopSettings): void {
   localStorage.setItem(KEYS.SETTINGS, JSON.stringify(s))
   supabase.from('shop_settings').upsert({ tenant_id: TENANT_ID, settings: s, updated_at: new Date().toISOString() }).then()
+}
+
+export async function loadSettingsFromDB(): Promise<ShopSettings> {
+  const { data } = await supabase.from('shop_settings').select('*').eq('tenant_id', TENANT_ID).single()
+  if (!data) return DEFAULT_SETTINGS
+  return { ...DEFAULT_SETTINGS, ...data.settings }
 }
 
 export function loadOrders(): OrderItem[] {
@@ -88,6 +100,15 @@ export function loadEquipment(): Equipment[] {
 
 export function saveEquipment(eq: Equipment[]): void {
   localStorage.setItem(KEYS.EQUIPMENT, JSON.stringify(eq))
+  supabase.from('equipments').delete().eq('tenant_id', TENANT_ID).then(() => {
+    supabase.from('equipments').insert(eq.map(e => ({ ...e, tenant_id: TENANT_ID }))).then()
+  })
+}
+
+export async function loadEquipmentFromDB(): Promise<Equipment[]> {
+  const { data } = await supabase.from('equipments').select('*').eq('tenant_id', TENANT_ID)
+  if (!data || data.length === 0) return DEFAULT_EQUIPMENT
+  return data.map(({ tenant_id, ...rest }) => rest as Equipment)
 }
 
 export function clearAllOrders(): void {

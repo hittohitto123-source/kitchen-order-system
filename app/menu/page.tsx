@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { MenuItem, EquipType, Equipment } from '../../lib/types'
-import { loadMenu, saveMenu, loadEquipment } from '../../lib/storage'
+import { loadMenu, saveMenu, loadEquipmentFromDB, loadMenuFromDB } from '../../lib/storage'
 
 const EQUIP_LABEL: Record<string, string> = {
   cold: '冷菜（火不要）', stove: 'コンロ', grill: 'グリル', fryer: 'フライヤー', straw: '藁焼き'
@@ -17,11 +17,15 @@ export default function MenuPage() {
   const [form, setForm] = useState(EMPTY)
   const [editId, setEditId] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setMenu(loadMenu())
-    const eq = loadEquipment()
-    setEquipment(eq.filter(e => e.active))
+    Promise.all([loadMenuFromDB(), loadEquipmentFromDB()]).then(([menuData, equipData]) => {
+      setMenu(menuData)
+      localStorage.setItem('kitchen_menu', JSON.stringify(menuData))
+      setEquipment(equipData.filter(e => e.active))
+      setLoading(false)
+    })
   }, [])
 
   const commit = (updated: MenuItem[]) => { setMenu(updated); saveMenu(updated) }
@@ -35,6 +39,10 @@ export default function MenuPage() {
     setForm(EMPTY); setEditId(null)
     setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
+
+  if (loading) return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">読み込み中...</div>
+  )
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-4">
@@ -70,12 +78,7 @@ export default function MenuPage() {
             </div>
           </div>
           <div>
-            <label className="text-xs text-gray-400 mb-2 block">
-              調理設備
-              {equipment.length === 0 && (
-                <span className="text-red-400 ml-2">※設備管理で設備を登録してください</span>
-              )}
-            </label>
+            <label className="text-xs text-gray-400 mb-2 block">調理設備</label>
             {equipment.length > 0 ? (
               <div className="grid grid-cols-2 gap-2">
                 {equipment.map(eq => (
@@ -94,8 +97,7 @@ export default function MenuPage() {
             ) : (
               <div className="bg-gray-800 rounded-xl p-4 text-center">
                 <div className="text-gray-400 text-sm">設備が登録されていません</div>
-                <Link href="/equipment"
-                  className="text-amber-400 text-xs mt-2 block">
+                <Link href="/equipment" className="text-amber-400 text-xs mt-2 block">
                   設備管理画面で設備を登録する
                 </Link>
               </div>
@@ -138,6 +140,9 @@ export default function MenuPage() {
         <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">
           登録メニュー（{menu.filter(m => m.active).length}品 有効）
         </h2>
+        {menu.length === 0 && (
+          <p className="text-gray-500 text-center py-8">メニューがありません</p>
+        )}
         {menu.map(item => (
           <div key={item.id}
             className={`flex items-center gap-3 p-3 rounded-xl mb-2 border ${

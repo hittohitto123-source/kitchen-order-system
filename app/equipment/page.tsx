@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { Equipment, EquipType } from '../../lib/types'
-import { loadEquipment, saveEquipment } from '../../lib/storage'
+import { saveEquipment, loadEquipmentFromDB } from '../../lib/storage'
 
 const EQUIP_OPTIONS: { value: EquipType; label: string }[] = [
   { value: 'cold',  label: '冷菜（火不要）' },
@@ -20,10 +20,20 @@ export default function EquipmentPage() {
   const [form, setForm] = useState(EMPTY)
   const [editId, setEditId] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  useEffect(() => { setEquipment(loadEquipment()) }, [])
+  useEffect(() => {
+    loadEquipmentFromDB().then(data => {
+      setEquipment(data)
+      localStorage.setItem('kitchen_equipment', JSON.stringify(data))
+      setLoading(false)
+    })
+  }, [])
 
-  const commit = (updated: Equipment[]) => { setEquipment(updated); saveEquipment(updated) }
+  const commit = (updated: Equipment[]) => {
+    setEquipment(updated)
+    saveEquipment(updated)
+  }
 
   const handleSave = () => {
     if (!form.name.trim()) return
@@ -35,12 +45,16 @@ export default function EquipmentPage() {
     setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
 
+  if (loading) return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">読み込み中...</div>
+  )
+
   return (
     <div className="min-h-screen bg-gray-950 text-white p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-xl font-bold text-amber-400">設備管理</h1>
         <div className="flex gap-2">
-          <Link href="/settings" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">店舗設定</Link>
+          <Link href="/menu" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">メニュー管理</Link>
           <Link href="/kitchen" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">厨房へ</Link>
         </div>
       </div>
@@ -54,7 +68,7 @@ export default function EquipmentPage() {
             <label className="text-xs text-gray-400 mb-1 block">設備名</label>
             <input type="text" value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              placeholder="例：コンロ4"
+              placeholder="例：コンロ1"
               className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 text-sm border border-gray-700 focus:border-amber-500 outline-none" />
           </div>
           <div>
@@ -63,7 +77,9 @@ export default function EquipmentPage() {
               {EQUIP_OPTIONS.map(opt => (
                 <button key={opt.value}
                   onClick={() => setForm(f => ({ ...f, type: opt.value }))}
-                  className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${form.type === opt.value ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>
+                  className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${
+                    form.type === opt.value ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}>
                   {opt.label}
                 </button>
               ))}
@@ -100,11 +116,13 @@ export default function EquipmentPage() {
           登録設備（{equipment.filter(e => e.active).length}台 有効）
         </h2>
         {equipment.length === 0 && (
-          <p className="text-gray-500 text-center py-8">設備がありません</p>
+          <p className="text-gray-500 text-center py-8">設備がありません。追加してください。</p>
         )}
         {equipment.map(item => (
           <div key={item.id}
-            className={`flex items-center gap-3 p-3 rounded-xl mb-2 border ${item.active ? 'bg-gray-800 border-gray-700' : 'bg-gray-900 border-gray-800 opacity-40'}`}>
+            className={`flex items-center gap-3 p-3 rounded-xl mb-2 border ${
+              item.active ? 'bg-gray-800 border-gray-700' : 'bg-gray-900 border-gray-800 opacity-40'
+            }`}>
             <div className="flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold">{item.name}</span>
@@ -118,7 +136,9 @@ export default function EquipmentPage() {
             </div>
             <div className="flex gap-1">
               <button onClick={() => commit(equipment.map(e => e.id === item.id ? { ...e, active: !e.active } : e))}
-                className={`text-xs px-2 py-1 rounded-lg font-bold ${item.active ? 'bg-green-800 text-green-300' : 'bg-gray-700 text-gray-400'}`}>
+                className={`text-xs px-2 py-1 rounded-lg font-bold ${
+                  item.active ? 'bg-green-800 text-green-300' : 'bg-gray-700 text-gray-400'
+                }`}>
                 {item.active ? '有効' : '無効'}
               </button>
               <button onClick={() => { setEditId(item.id); setForm({ name: item.name, type: item.type, slots: item.slots }) }}
