@@ -21,8 +21,11 @@ const EQUIP_LABEL: Record<string, string> = {
 export default function AnalyticsPage() {
   const [logs, setLogs] = useState<AnalyticsLog[]>([])
   const [loading, setLoading] = useState(true)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
-  useEffect(() => {
+  const fetchLogs = () => {
+    setLoading(true)
     supabase
       .from('analytics_logs')
       .select('*')
@@ -33,7 +36,18 @@ export default function AnalyticsPage() {
         setLogs(data ?? [])
         setLoading(false)
       })
-  }, [])
+  }
+
+  useEffect(() => { fetchLogs() }, [])
+
+  const handleReset = async () => {
+    setResetting(true)
+    await supabase.from('analytics_logs').delete().eq('tenant_id', 'default')
+    await supabase.from('kitchen_order_items').delete().eq('tenant_id', 'default')
+    setLogs([])
+    setResetting(false)
+    setShowResetConfirm(false)
+  }
 
   const menuRanking = Object.values(
     logs.reduce((acc, log) => {
@@ -70,9 +84,40 @@ export default function AnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-4">
+
+      {showResetConfirm && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:'1rem'}}>
+          <div className="bg-gray-900 rounded-2xl p-6 max-w-sm w-full border border-red-700">
+            <h2 className="text-xl font-bold text-red-400 mb-2">データをリセット</h2>
+            <p className="text-gray-300 mb-2 text-sm">以下のデータを全て削除します。</p>
+            <ul className="text-gray-400 text-sm mb-6 list-disc list-inside">
+              <li>分析ログ（提供履歴）</li>
+              <li>注文履歴（Supabase上）</li>
+            </ul>
+            <p className="text-red-400 text-xs mb-6">この操作は元に戻せません。</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowResetConfirm(false)}
+                className="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl">
+                キャンセル
+              </button>
+              <button onClick={handleReset} disabled={resetting}
+                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl">
+                {resetting ? '削除中...' : 'リセットする'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-xl font-bold text-amber-400">分析レポート</h1>
-        <Link href="/kitchen" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">厨房へ</Link>
+        <div className="flex gap-2">
+          <button onClick={() => setShowResetConfirm(true)}
+            className="bg-red-900 hover:bg-red-800 text-red-300 px-3 py-2 rounded-lg text-sm font-bold">
+            リセット
+          </button>
+          <Link href="/kitchen" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">厨房へ</Link>
+        </div>
       </div>
 
       {logs.length === 0 ? (
