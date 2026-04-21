@@ -2,26 +2,26 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import type { MenuItem, EquipType } from '../../lib/types'
-import { loadMenu, saveMenu } from '../../lib/storage'
+import type { MenuItem, EquipType, Equipment } from '../../lib/types'
+import { loadMenu, saveMenu, loadEquipment } from '../../lib/storage'
 
-const EQUIP_OPTIONS: { value: EquipType; label: string }[] = [
-  { value: 'cold',  label: '冷菜（火不要）' },
-  { value: 'stove', label: 'コンロ' },
-  { value: 'grill', label: 'グリル' },
-  { value: 'fryer', label: 'フライヤー' },
-  { value: 'straw', label: '藁焼き' },
-]
+const EQUIP_LABEL: Record<string, string> = {
+  cold: '冷菜（火不要）', stove: 'コンロ', grill: 'グリル', fryer: 'フライヤー', straw: '藁焼き'
+}
 
 const EMPTY = { name: '', cookTime: 5, equip: 'cold' as EquipType, attn: 0, bonus: 0 }
 
 export default function MenuPage() {
   const [menu, setMenu] = useState<MenuItem[]>([])
+  const [equipment, setEquipment] = useState<Equipment[]>([])
   const [form, setForm] = useState(EMPTY)
   const [editId, setEditId] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
-  useEffect(() => { setMenu(loadMenu()) }, [])
+  useEffect(() => {
+    setMenu(loadMenu())
+    setEquipment(loadEquipment().filter(e => e.active))
+  }, [])
 
   const commit = (updated: MenuItem[]) => { setMenu(updated); saveMenu(updated) }
 
@@ -35,6 +35,8 @@ export default function MenuPage() {
     setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
 
+  const equipTypes = Array.from(new Set(equipment.map(e => e.type)))
+
   return (
     <div className="min-h-screen bg-gray-950 text-white p-4">
       <div className="flex justify-between items-center mb-6">
@@ -44,6 +46,7 @@ export default function MenuPage() {
           <Link href="/kitchen" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">厨房へ</Link>
         </div>
       </div>
+
       <div className="bg-gray-900 rounded-xl p-4 mb-6">
         <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
           {editId ? '編集中' : '新しいメニューを追加'}
@@ -67,13 +70,23 @@ export default function MenuPage() {
           <div>
             <label className="text-xs text-gray-400 mb-2 block">調理設備</label>
             <div className="grid grid-cols-3 gap-2">
-              {EQUIP_OPTIONS.map(opt => (
-                <button key={opt.value} onClick={() => setForm(f => ({ ...f, equip: opt.value }))}
-                  className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${form.equip === opt.value ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>
-                  {opt.label}
+              {equipTypes.length > 0 ? equipTypes.map(type => (
+                <button key={type} onClick={() => setForm(f => ({ ...f, equip: type }))}
+                  className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${form.equip === type ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>
+                  {EQUIP_LABEL[type]}
                 </button>
-              ))}
+              )) : (
+                Object.entries(EQUIP_LABEL).map(([value, label]) => (
+                  <button key={value} onClick={() => setForm(f => ({ ...f, equip: value as EquipType }))}
+                    className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${form.equip === value ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>
+                    {label}
+                  </button>
+                ))
+              )}
             </div>
+            {equipTypes.length > 0 && (
+              <div className="text-xs text-gray-600 mt-1">設備管理で登録した設備が表示されています</div>
+            )}
           </div>
           <div>
             <label className="text-xs text-gray-400 mb-1 block">
@@ -103,6 +116,7 @@ export default function MenuPage() {
           </div>
         </div>
       </div>
+
       <div className="bg-gray-900 rounded-xl p-4">
         <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">
           登録メニュー（{menu.filter(m => m.active).length}品 有効）
@@ -114,7 +128,7 @@ export default function MenuPage() {
               <div className="flex items-center gap-2">
                 <span className="font-bold">{item.name}</span>
                 <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">
-                  {EQUIP_OPTIONS.find(e => e.value === item.equip)?.label}
+                  {EQUIP_LABEL[item.equip]}
                 </span>
               </div>
               <div className="text-xs text-gray-400 mt-1">
