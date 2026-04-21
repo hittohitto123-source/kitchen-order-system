@@ -38,14 +38,17 @@ export default function MenuPage() {
     setSyncing(false)
   }
 
-  const commit = (updated: MenuItem[]) => { setMenu(updated); saveMenu(updated) }
+  const commit = async (updated: MenuItem[]) => {
+    setMenu(updated)
+    await saveMenu(updated)
+  }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim()) return
     const updated = editId
       ? menu.map(m => m.id === editId ? { ...m, ...form } : m)
       : [...menu, { id: 'm' + Date.now(), ...form, active: true }]
-    commit(updated)
+    await commit(updated)
     setForm(EMPTY); setEditId(null)
     setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
