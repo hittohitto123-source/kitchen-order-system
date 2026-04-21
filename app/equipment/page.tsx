@@ -21,14 +21,23 @@ export default function EquipmentPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+
+  const fetchAll = async () => {
+    const data = await loadEquipmentFromDB()
+    setEquipment(data)
+    localStorage.setItem('kitchen_equipment', JSON.stringify(data))
+  }
 
   useEffect(() => {
-    loadEquipmentFromDB().then(data => {
-      setEquipment(data)
-      localStorage.setItem('kitchen_equipment', JSON.stringify(data))
-      setLoading(false)
-    })
+    fetchAll().then(() => setLoading(false))
   }, [])
+
+  const handleSync = async () => {
+    setSyncing(true)
+    await fetchAll()
+    setSyncing(false)
+  }
 
   const commit = (updated: Equipment[]) => {
     setEquipment(updated)
@@ -54,6 +63,10 @@ export default function EquipmentPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-xl font-bold text-amber-400">設備管理</h1>
         <div className="flex gap-2">
+          <button onClick={handleSync}
+            className={`px-3 py-2 rounded-lg text-sm font-bold transition-colors ${syncing ? 'bg-blue-900 text-blue-300' : 'bg-blue-700 hover:bg-blue-600 text-white'}`}>
+            {syncing ? '同期中...' : '同期'}
+          </button>
           <Link href="/menu" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">メニュー管理</Link>
           <Link href="/kitchen" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">厨房へ</Link>
         </div>
