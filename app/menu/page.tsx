@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { MenuItem, EquipType, Equipment } from '../../lib/types'
-import { loadMenu, saveMenu, loadEquipmentFromDB, loadMenuFromDB } from '../../lib/storage'
+import { saveMenu, loadEquipmentFromDB, loadMenuFromDB } from '../../lib/storage'
 
 const EQUIP_LABEL: Record<string, string> = {
   cold: '冷菜（火不要）', stove: 'コンロ', grill: 'グリル', fryer: 'フライヤー', straw: '藁焼き'
@@ -18,15 +18,25 @@ export default function MenuPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+
+  const fetchAll = async () => {
+    const [menuData, equipData] = await Promise.all([loadMenuFromDB(), loadEquipmentFromDB()])
+    setMenu(menuData)
+    setEquipment(equipData.filter(e => e.active))
+    localStorage.setItem('kitchen_menu', JSON.stringify(menuData))
+    localStorage.setItem('kitchen_equipment', JSON.stringify(equipData))
+  }
 
   useEffect(() => {
-    Promise.all([loadMenuFromDB(), loadEquipmentFromDB()]).then(([menuData, equipData]) => {
-      setMenu(menuData)
-      localStorage.setItem('kitchen_menu', JSON.stringify(menuData))
-      setEquipment(equipData.filter(e => e.active))
-      setLoading(false)
-    })
+    fetchAll().then(() => setLoading(false))
   }, [])
+
+  const handleSync = async () => {
+    setSyncing(true)
+    await fetchAll()
+    setSyncing(false)
+  }
 
   const commit = (updated: MenuItem[]) => { setMenu(updated); saveMenu(updated) }
 
@@ -49,6 +59,10 @@ export default function MenuPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-xl font-bold text-amber-400">メニュー管理</h1>
         <div className="flex gap-2">
+          <button onClick={handleSync}
+            className={`px-3 py-2 rounded-lg text-sm font-bold transition-colors ${syncing ? 'bg-blue-900 text-blue-300' : 'bg-blue-700 hover:bg-blue-600 text-white'}`}>
+            {syncing ? '同期中...' : '同期'}
+          </button>
           <Link href="/equipment" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">設備管理</Link>
           <Link href="/kitchen" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">厨房へ</Link>
         </div>
