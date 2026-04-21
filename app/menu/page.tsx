@@ -2,26 +2,27 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import type { MenuItem, EquipType } from '../../lib/types'
-import { loadMenu, saveMenu } from '../../lib/storage'
+import type { MenuItem, EquipType, Equipment } from '../../lib/types'
+import { loadMenu, saveMenu, loadEquipment } from '../../lib/storage'
 
-const EQUIP_OPTIONS: { value: EquipType; label: string }[] = [
-  { value: 'cold',  label: '冷菜（火不要）' },
-  { value: 'stove', label: 'コンロ' },
-  { value: 'grill', label: 'グリル' },
-  { value: 'fryer', label: 'フライヤー' },
-  { value: 'straw', label: '藁焼き' },
-]
+const EQUIP_LABEL: Record<string, string> = {
+  cold: '冷菜（火不要）', stove: 'コンロ', grill: 'グリル', fryer: 'フライヤー', straw: '藁焼き'
+}
 
 const EMPTY = { name: '', cookTime: 5, equip: 'cold' as EquipType, attn: 0, bonus: 0 }
 
 export default function MenuPage() {
   const [menu, setMenu] = useState<MenuItem[]>([])
+  const [equipment, setEquipment] = useState<Equipment[]>([])
   const [form, setForm] = useState(EMPTY)
   const [editId, setEditId] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
-  useEffect(() => { setMenu(loadMenu()) }, [])
+  useEffect(() => {
+    setMenu(loadMenu())
+    const eq = loadEquipment()
+    setEquipment(eq.filter(e => e.active))
+  }, [])
 
   const commit = (updated: MenuItem[]) => { setMenu(updated); saveMenu(updated) }
 
@@ -40,7 +41,7 @@ export default function MenuPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-xl font-bold text-amber-400">メニュー管理</h1>
         <div className="flex gap-2">
-          <Link href="/settings" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">店舗設定</Link>
+          <Link href="/equipment" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">設備管理</Link>
           <Link href="/kitchen" className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-bold">厨房へ</Link>
         </div>
       </div>
@@ -69,18 +70,36 @@ export default function MenuPage() {
             </div>
           </div>
           <div>
-            <label className="text-xs text-gray-400 mb-2 block">調理設備</label>
-            <div className="grid grid-cols-3 gap-2">
-              {EQUIP_OPTIONS.map(opt => (
-                <button key={opt.value}
-                  onClick={() => setForm(f => ({ ...f, equip: opt.value }))}
-                  className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${
-                    form.equip === opt.value ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                  }`}>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            <label className="text-xs text-gray-400 mb-2 block">
+              調理設備
+              {equipment.length === 0 && (
+                <span className="text-red-400 ml-2">※設備管理で設備を登録してください</span>
+              )}
+            </label>
+            {equipment.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {equipment.map(eq => (
+                  <button key={eq.id}
+                    onClick={() => setForm(f => ({ ...f, equip: eq.type }))}
+                    className={`py-3 px-3 rounded-lg text-sm font-bold transition-colors text-left ${
+                      form.equip === eq.type ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}>
+                    <div>{eq.name}</div>
+                    <div className={`text-xs mt-0.5 ${form.equip === eq.type ? 'text-black opacity-70' : 'text-gray-500'}`}>
+                      {EQUIP_LABEL[eq.type]}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-gray-800 rounded-xl p-4 text-center">
+                <div className="text-gray-400 text-sm">設備が登録されていません</div>
+                <Link href="/equipment"
+                  className="text-amber-400 text-xs mt-2 block">
+                  設備管理画面で設備を登録する
+                </Link>
+              </div>
+            )}
           </div>
           <div>
             <label className="text-xs text-gray-400 mb-1 block">
@@ -125,10 +144,10 @@ export default function MenuPage() {
               item.active ? 'bg-gray-800 border-gray-700' : 'bg-gray-900 border-gray-800 opacity-40'
             }`}>
             <div className="flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold">{item.name}</span>
                 <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">
-                  {EQUIP_OPTIONS.find(e => e.value === item.equip)?.label}
+                  {equipment.find(e => e.type === item.equip)?.name ?? EQUIP_LABEL[item.equip]}
                 </span>
               </div>
               <div className="text-xs text-gray-400 mt-1">
