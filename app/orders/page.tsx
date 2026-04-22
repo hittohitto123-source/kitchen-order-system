@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import type { OrderItem, MenuItem } from '../../lib/types'
-import { loadOrders, saveOrders, loadMenu, loadSettings, loadNextId, saveNextId } from '../../lib/storage'
+import { loadOrders, saveOrders, loadSettings, loadNextId, saveNextId, loadMenuFromDB } from '../../lib/storage'
 
 function formatWait(sec: number) {
   if (sec < 60) return `${sec}秒`
@@ -19,12 +19,16 @@ export default function OrdersPage() {
   const [selTable, setSelTable] = useState<number | null>(null)
   const [cart, setCart] = useState<{ menu: MenuItem; qty: number }[]>([])
   const [step, setStep] = useState<'table' | 'menu' | 'confirm'>('table')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const m = loadMenu().filter(m => m.active)
-    setMenuList(m)
     setOrders(loadOrders())
     setTableCount(loadSettings().tableCount)
+    loadMenuFromDB().then(menuData => {
+      setMenuList(menuData.filter(m => m.active))
+      localStorage.setItem('kitchen_menu', JSON.stringify(menuData))
+      setLoading(false)
+    })
   }, [])
 
   useEffect(() => {
@@ -77,13 +81,24 @@ export default function OrdersPage() {
 
   const tables = Array.from({ length: tableCount }, (_, i) => i + 1)
   const settings = loadSettings()
+
   const getWaitSec = (table: number) => {
     const items = orders.filter(o => o.table === table && o.status !== 'served')
     if (!items.length) return null
     return Math.floor((now - Math.min(...items.map(o => o.addedAt))) / 1000)
   }
+
   const tableOrders = selTable ? orders.filter(o => o.table === selTable) : []
   const totalCartItems = cart.reduce((s, c) => s + c.qty, 0)
+
+  if (loading) return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">
+      <div className="text-center">
+        <div className="text-amber-400 font-bold text-2xl mb-2">KitchenQ</div>
+        <div className="text-gray-400">読み込み中...</div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-gray-950 text-white pb-20" style={{fontFamily:'system-ui,sans-serif'}}>
@@ -133,6 +148,7 @@ export default function OrdersPage() {
               if (!tOrders.length) return null
               const pending = tOrders.filter(o => o.status === 'pending')
               const cooking = tOrders.filter(o => o.status === 'cooking')
+              if (!pending.length && !cooking.length) return null
               return (
                 <div key={t} className="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0">
                   <span className="text-lg font-black text-amber-400 w-8">{t}卓</span>
