@@ -63,6 +63,7 @@ export default function KitchenPage() {
   }, [])
 
   useEffect(() => {
+    let dbPollCount = 0
     const t = setInterval(() => {
       const newNow = Date.now()
       setNow(newNow)
@@ -76,6 +77,23 @@ export default function KitchenPage() {
         const newDanger = dangerTables.filter(t => !alertedTables.current.has(t))
         if (newDanger.length > 0) { playAlertSound(); newDanger.forEach(t => alertedTables.current.add(t)) }
         if (dangerTables.length === 0) alertedTables.current.clear()
+      }
+      dbPollCount++
+      if (dbPollCount >= 10) {
+        dbPollCount = 0
+        loadOrdersFromDB().then(dbOrders => {
+          if (dbOrders.length > 0) {
+            saveOrders(dbOrders)
+            setOrders(dbOrders)
+            const maxId = Math.max(...dbOrders.map(o => o.id), 0)
+            saveNextId(maxId + 1)
+          }
+        })
+        loadMenuFromDB().then(menuData => {
+          const activeMenu = menuData.filter(m => m.active)
+          setMenuList(activeMenu)
+          localStorage.setItem('kitchen_menu', JSON.stringify(menuData))
+        })
       }
     }, 1000)
     return () => clearInterval(t)
@@ -167,7 +185,6 @@ export default function KitchenPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white" style={{fontFamily:'system-ui,sans-serif'}}>
 
-      {/* 営業終了モーダル */}
       {showCloseConfirm && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:'1rem'}}>
           <div className="bg-gray-900 rounded-3xl p-6 w-full max-w-sm border-2 border-red-700">
@@ -183,7 +200,6 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* バッチ選択モーダル */}
       {batchModal && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:'1rem'}}>
           <div className="bg-gray-900 rounded-3xl p-6 w-full max-w-sm border-2 border-blue-700">
@@ -193,8 +209,6 @@ export default function KitchenPage() {
             <p className="text-gray-400 text-sm text-center mb-4">
               同じメニューが{batchModal.sameMenuOrders.length + 1}件あります。何件まとめて調理しますか？
             </p>
-
-            {/* 各卓の一覧 */}
             <div className="bg-gray-800 rounded-2xl p-3 mb-4">
               {[batchModal.order, ...batchModal.sameMenuOrders].map(o => (
                 <div key={o.id} className="flex items-center justify-between py-2 border-b border-gray-700 last:border-0">
@@ -203,16 +217,11 @@ export default function KitchenPage() {
                 </div>
               ))}
             </div>
-
-            {/* 選択ボタン */}
             <div className="flex flex-col gap-2 mb-3">
-              {/* 1件だけ */}
               <button onClick={() => startCooking([batchModal.order.id])}
                 className="w-full bg-gray-700 text-white font-bold py-3 rounded-2xl text-sm active:scale-95">
                 {batchModal.order.table}卓だけ開始（1件）
               </button>
-
-              {/* 2件以上の場合、個別選択 */}
               {batchModal.sameMenuOrders.map((_, idx) => {
                 const selectedOrders = [batchModal.order, ...batchModal.sameMenuOrders.slice(0, idx + 1)]
                 return (
@@ -222,14 +231,11 @@ export default function KitchenPage() {
                   </button>
                 )
               })}
-
-              {/* 全件 */}
               <button onClick={() => startCooking([batchModal.order, ...batchModal.sameMenuOrders].map(o => o.id))}
                 className="w-full bg-green-600 text-white font-black py-3 rounded-2xl text-sm active:scale-95">
                 全{batchModal.sameMenuOrders.length + 1}件まとめて開始
               </button>
             </div>
-
             <button onClick={() => setBatchModal(null)}
               className="w-full bg-gray-800 text-gray-400 font-bold py-3 rounded-2xl text-sm">
               キャンセル
@@ -238,12 +244,11 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* ヘッダー */}
       <div className="bg-gray-900 border-b border-gray-800 px-3 py-2">
         <div className="flex items-center justify-between mb-2">
           <div>
             <h1 className="text-lg font-black text-amber-400">KitchenQ</h1>
-            <span className="text-xs text-green-500">DB同期済</span>
+            <span className="text-xs text-green-500">DB自動同期（10秒）</span>
           </div>
           <div className="flex gap-1.5">
             <button onClick={toggleSound}
@@ -280,7 +285,6 @@ export default function KitchenPage() {
         </div>
       </div>
 
-      {/* タブ */}
       <div className="flex bg-gray-900 border-b border-gray-800">
         {[
           { key: 'priority', label: '優先順位' },
@@ -296,11 +300,8 @@ export default function KitchenPage() {
         ))}
       </div>
 
-      {/* 優先順位タブ - 左右2カラム */}
       {activeTab === 'priority' && (
         <div className="flex gap-0 overflow-hidden" style={{height:'calc(100vh - 160px)'}}>
-
-          {/* 左カラム：待機中（優先順位順） */}
           <div className="flex-1 border-r border-gray-800 overflow-y-auto">
             <div className="bg-gray-900 px-3 py-2 border-b border-gray-800 sticky top-0 z-10">
               <div className="text-xs font-black text-amber-400 uppercase tracking-wider">
@@ -351,7 +352,6 @@ export default function KitchenPage() {
             </div>
           </div>
 
-          {/* 右カラム：調理中 */}
           <div className="flex-1 overflow-y-auto">
             <div className="bg-gray-900 px-3 py-2 border-b border-gray-800 sticky top-0 z-10">
               <div className="text-xs font-black text-blue-400 uppercase tracking-wider">
@@ -386,7 +386,6 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* 卓一覧タブ */}
       {activeTab === 'tables' && (
         <div className="p-3 pb-24">
           <div className="grid grid-cols-3 gap-3">
@@ -428,7 +427,6 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* 注文追加タブ */}
       {activeTab === 'add' && (
         <div className="p-3 pb-24">
           <div className="bg-gray-900 rounded-2xl p-4 mb-3">
@@ -494,7 +492,6 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* 底部ナビ */}
       <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 flex">
         <Link href="/kitchen" className="flex-1 py-4 text-center text-xs text-amber-400 font-bold border-t-2 border-amber-400">厨房</Link>
         <Link href="/orders" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">注文</Link>
