@@ -161,48 +161,51 @@ export default function KitchenPage() {
         </div>
       )}
 
-      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3">
-        <div className="flex items-center justify-between mb-3">
+      {/* ヘッダー */}
+      <div className="bg-gray-900 border-b border-gray-800 px-3 py-2">
+        <div className="flex items-center justify-between mb-2">
           <div>
-            <h1 className="text-xl font-black text-amber-400">KitchenQ</h1>
+            <h1 className="text-lg font-black text-amber-400">KitchenQ</h1>
             <span className="text-xs text-green-500">DB同期済</span>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
             <button onClick={toggleSound}
-              className={`px-3 py-2 rounded-xl text-xs font-bold ${settings.soundAlert ? 'bg-blue-800 text-blue-300' : 'bg-gray-700 text-gray-400'}`}>
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold ${settings.soundAlert ? 'bg-blue-800 text-blue-300' : 'bg-gray-700 text-gray-400'}`}>
               {settings.soundAlert ? '音ON' : '音OFF'}
             </button>
             <button onClick={toggleOneOp}
-              className={`px-3 py-2 rounded-xl text-xs font-bold ${settings.oneOperatorMode ? 'bg-amber-500 text-black' : 'bg-gray-700 text-white'}`}>
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold ${settings.oneOperatorMode ? 'bg-amber-500 text-black' : 'bg-gray-700 text-white'}`}>
               {settings.oneOperatorMode ? 'ワンオペ' : '通常'}
             </button>
             <button onClick={() => setShowCloseConfirm(true)}
-              className="px-3 py-2 rounded-xl text-xs font-bold bg-red-900 text-red-300">
+              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-red-900 text-red-300">
               終了
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-2">
-          <div className="bg-gray-800 rounded-xl py-2 text-center">
-            <div className="text-2xl font-black text-amber-400">{pending.length}</div>
+        {/* 統計 */}
+        <div className="grid grid-cols-4 gap-1.5">
+          <div className="bg-gray-800 rounded-xl py-1.5 text-center">
+            <div className="text-xl font-black text-amber-400">{pending.length}</div>
             <div className="text-xs text-gray-400">待機</div>
           </div>
-          <div className="bg-gray-800 rounded-xl py-2 text-center">
-            <div className="text-2xl font-black text-blue-400">{cooking.length}</div>
+          <div className="bg-gray-800 rounded-xl py-1.5 text-center">
+            <div className="text-xl font-black text-blue-400">{cooking.length}</div>
             <div className="text-xs text-gray-400">調理中</div>
           </div>
-          <div className="bg-gray-800 rounded-xl py-2 text-center">
-            <div className="text-2xl font-black text-green-400">{orders.filter(o => o.status === 'served').length}</div>
+          <div className="bg-gray-800 rounded-xl py-1.5 text-center">
+            <div className="text-xl font-black text-green-400">{orders.filter(o => o.status === 'served').length}</div>
             <div className="text-xs text-gray-400">提供済</div>
           </div>
-          <div className="bg-gray-800 rounded-xl py-2 text-center">
-            <div className="text-2xl font-black text-red-400">{dangerTables.size}</div>
+          <div className="bg-gray-800 rounded-xl py-1.5 text-center">
+            <div className="text-xl font-black text-red-400">{dangerTables.size}</div>
             <div className="text-xs text-gray-400">遅延卓</div>
           </div>
         </div>
       </div>
 
+      {/* タブ */}
       <div className="flex bg-gray-900 border-b border-gray-800">
         {[
           { key: 'priority', label: '優先順位' },
@@ -210,7 +213,7 @@ export default function KitchenPage() {
           { key: 'add',      label: '注文追加' },
         ].map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
-            className={`flex-1 py-3 text-sm font-bold transition-all border-b-2 ${
+            className={`flex-1 py-2.5 text-sm font-bold transition-all border-b-2 ${
               activeTab === tab.key ? 'text-amber-400 border-amber-400' : 'text-gray-400 border-transparent'
             }`}>
             {tab.label}
@@ -218,70 +221,97 @@ export default function KitchenPage() {
         ))}
       </div>
 
+      {/* 優先順位タブ - 左右2カラム */}
       {activeTab === 'priority' && (
-        <div className="p-3 pb-24">
-          {scheduled.length === 0 && cooking.length === 0 && (
-            <div className="text-center py-16 text-gray-500">
-              <div className="text-5xl mb-4">🍳</div>
-              <div className="font-bold">注文がありません</div>
+        <div className="flex gap-0 h-full pb-16" style={{height:'calc(100vh - 160px)'}}>
+
+          {/* 左カラム：これから調理（優先順位順） */}
+          <div className="flex-1 border-r border-gray-800 overflow-y-auto">
+            <div className="bg-gray-900 px-3 py-2 border-b border-gray-800 sticky top-0 z-10">
+              <div className="text-xs font-black text-amber-400 uppercase tracking-wider">
+                次にやること ({scheduled.length})
+              </div>
             </div>
-          )}
-          {scheduled.map((o, i) => {
-            const waitSec = Math.floor((now - o.addedAt) / 1000)
-            const isDanger = waitSec >= settings.dangerThresholdSec
-            const isWarn = waitSec >= settings.warningThresholdSec
-            return (
-              <div key={o.id}>
-                {o.isBatchLeader && (
-                  <div className="flex items-center gap-2 mb-1 mt-2">
-                    <span className="text-xs text-green-400 font-bold bg-green-950 border border-green-800 px-3 py-1 rounded-full">
-                      まとめて調理 {o.batchCount}件
-                    </span>
-                  </div>
-                )}
-                <div className={`flex items-center gap-3 p-4 rounded-2xl mb-2 ${
-                  o.batchCount > 1 ? 'border-l-4 border-l-green-500 ' : ''
-                }${isDanger ? 'bg-red-950 border-2 border-red-700' : isWarn ? 'bg-amber-950 border-2 border-amber-700' : 'bg-gray-800 border-2 border-gray-700'}`}>
-                  <div className={`text-3xl font-black w-10 text-center flex-shrink-0 ${
-                    isDanger ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-gray-500'
-                  }`}>{i + 1}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-black text-xl">{o.menu.name}</div>
-                    <div className="flex gap-2 text-sm mt-1 flex-wrap items-center">
-                      <span className="text-amber-400 font-black text-lg">{o.table}卓</span>
-                      <span className="text-gray-400">{EQUIP_LABEL[o.menu.equip]}</span>
-                      <span className="text-gray-500">{o.menu.cookTime}分</span>
-                      {waitSec > 0 && <span className="text-gray-500">待機{formatWait(waitSec)}</span>}
-                      {isDanger && <span className="text-red-400 font-black animate-pulse text-sm">遅延!</span>}
+            <div className="p-2">
+              {scheduled.length === 0 && (
+                <div className="text-center py-8 text-gray-600">
+                  <div className="text-3xl mb-2">✓</div>
+                  <div className="text-xs">待機なし</div>
+                </div>
+              )}
+              {scheduled.map((o, i) => {
+                const waitSec = Math.floor((now - o.addedAt) / 1000)
+                const isDanger = waitSec >= settings.dangerThresholdSec
+                const isWarn = waitSec >= settings.warningThresholdSec
+                return (
+                  <div key={o.id}>
+                    {o.isBatchLeader && o.batchCount > 1 && (
+                      <div className="text-xs text-green-400 font-bold bg-green-950 border border-green-800 px-2 py-0.5 rounded-full mb-1 inline-block">
+                        まとめて{o.batchCount}件
+                      </div>
+                    )}
+                    <div className={`rounded-xl p-2.5 mb-2 border ${
+                      o.batchCount > 1 ? 'border-l-4 border-l-green-500 ' : ''
+                    }${isDanger ? 'bg-red-950 border-red-700' : isWarn ? 'bg-amber-950 border-amber-700' : 'bg-gray-800 border-gray-700'}`}>
+                      <div className="flex items-start gap-2 mb-2">
+                        <span className={`text-lg font-black w-6 text-center flex-shrink-0 ${
+                          isDanger ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-gray-500'
+                        }`}>{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-black text-sm leading-tight">{o.menu.name}</div>
+                          <div className="text-xs text-amber-400 font-bold">{o.table}卓</div>
+                          <div className="text-xs text-gray-500">{EQUIP_LABEL[o.menu.equip]} · {o.menu.cookTime}分</div>
+                          {waitSec > 0 && <div className="text-xs text-gray-500">待機{formatWait(waitSec)}</div>}
+                          {isDanger && <div className="text-xs text-red-400 font-black animate-pulse">遅延!</div>}
+                        </div>
+                      </div>
+                      <button onClick={() => setStatus(o.id, 'cooking')}
+                        className="w-full bg-blue-600 active:scale-95 text-white py-2.5 rounded-lg text-sm font-black">
+                        開始
+                      </button>
                     </div>
                   </div>
-                  <button onClick={() => setStatus(o.id, 'cooking')}
-                    className="bg-blue-600 active:scale-95 text-white px-5 py-4 rounded-2xl text-base font-black flex-shrink-0">
-                    開始
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 右カラム：調理中 */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="bg-gray-900 px-3 py-2 border-b border-gray-800 sticky top-0 z-10">
+              <div className="text-xs font-black text-blue-400 uppercase tracking-wider">
+                調理中 ({cooking.length})
+              </div>
+            </div>
+            <div className="p-2">
+              {cooking.length === 0 && (
+                <div className="text-center py-8 text-gray-600">
+                  <div className="text-3xl mb-2">🍳</div>
+                  <div className="text-xs">調理中なし</div>
+                </div>
+              )}
+              {cooking.map(o => (
+                <div key={o.id} className="bg-blue-950 border border-blue-700 rounded-xl p-2.5 mb-2">
+                  <div className="flex items-start gap-2 mb-2">
+                    <span className="text-blue-400 text-lg font-black">▶</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-black text-sm leading-tight">{o.menu.name}</div>
+                      <div className="text-xs text-amber-400 font-bold">{o.table}卓</div>
+                      <div className="text-xs text-gray-500">{EQUIP_LABEL[o.menu.equip]} · {o.menu.cookTime}分</div>
+                    </div>
+                  </div>
+                  <button onClick={() => setStatus(o.id, 'served')}
+                    className="w-full bg-green-600 active:scale-95 text-white py-2.5 rounded-lg text-sm font-black">
+                    完了
                   </button>
                 </div>
-              </div>
-            )
-          })}
-          {cooking.map(o => (
-            <div key={o.id} className="flex items-center gap-3 p-4 rounded-2xl mb-2 bg-blue-950 border-2 border-blue-700">
-              <div className="text-3xl font-black w-10 text-center text-blue-400 flex-shrink-0">▶</div>
-              <div className="flex-1">
-                <div className="font-black text-xl">{o.menu.name}</div>
-                <div className="flex gap-2 text-sm mt-1">
-                  <span className="text-amber-400 font-black text-lg">{o.table}卓</span>
-                  <span className="text-blue-400 font-bold">調理中</span>
-                </div>
-              </div>
-              <button onClick={() => setStatus(o.id, 'served')}
-                className="bg-green-600 active:scale-95 text-white px-5 py-4 rounded-2xl text-base font-black flex-shrink-0">
-                完了
-              </button>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       )}
 
+      {/* 卓一覧タブ */}
       {activeTab === 'tables' && (
         <div className="p-3 pb-24">
           <div className="grid grid-cols-3 gap-3">
@@ -323,6 +353,7 @@ export default function KitchenPage() {
         </div>
       )}
 
+      {/* 注文追加タブ */}
       {activeTab === 'add' && (
         <div className="p-3 pb-24">
           <div className="bg-gray-900 rounded-2xl p-4 mb-3">
@@ -344,18 +375,18 @@ export default function KitchenPage() {
             <div className="grid grid-cols-2 gap-2">
               {menuList.map(m => (
                 <button key={m.id} onClick={() => setSelMenu(m.id)}
-                  className={`p-4 rounded-xl text-left transition-all active:scale-95 border-2 ${
+                  className={`p-3 rounded-xl text-left transition-all active:scale-95 border-2 ${
                     selMenu === m.id ? 'bg-amber-900 border-amber-500' : 'bg-gray-800 border-gray-700'
                   }`}>
-                  <div className="font-bold text-base">{m.name}</div>
-                  <div className="text-xs text-gray-400 mt-1">{m.cookTime}分 · {EQUIP_LABEL[m.equip]}</div>
+                  <div className="font-bold text-sm">{m.name}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{m.cookTime}分 · {EQUIP_LABEL[m.equip]}</div>
                 </button>
               ))}
             </div>
           </div>
 
           <button onClick={addOrder}
-            className="w-full bg-amber-500 active:scale-98 text-black font-black py-6 rounded-2xl text-2xl transition-all">
+            className="w-full bg-amber-500 active:scale-98 text-black font-black py-5 rounded-2xl text-xl transition-all">
             {selTable}卓に注文する
           </button>
 
@@ -367,7 +398,7 @@ export default function KitchenPage() {
                   <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
                     o.status === 'pending' ? 'bg-amber-400' : o.status === 'cooking' ? 'bg-blue-400' : 'bg-green-400'
                   }`} />
-                  <div className="flex-1 font-bold">{o.menu.name}</div>
+                  <div className="flex-1 font-bold text-sm">{o.menu.name}</div>
                   <div className="flex gap-2">
                     {o.status === 'pending' && (
                       <button onClick={() => setStatus(o.id, 'cooking')}
@@ -388,6 +419,7 @@ export default function KitchenPage() {
         </div>
       )}
 
+      {/* 底部ナビ */}
       <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 flex">
         <Link href="/kitchen" className="flex-1 py-4 text-center text-xs text-amber-400 font-bold border-t-2 border-amber-400">厨房</Link>
         <Link href="/orders" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">注文</Link>
