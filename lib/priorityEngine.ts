@@ -13,12 +13,37 @@ export function buildSchedule(
   now: number
 ): ScoredOrder[] {
   const pending = orders.filter(o => o.status === 'pending')
+
   const scored = pending
     .map(o => { const { score, reasons } = calcScore(o, orders, settings, now); return { ...o, score, reasons } })
     .sort((a, b) => b.score - a.score)
-  return scored.map(o => {
-    const sameMenu = scored.filter(s => s.menu.id === o.menu.id)
-    return { ...o, isBatchLeader: sameMenu.length > 1 && sameMenu[0].id === o.id, batchCount: sameMenu.length }
+
+  // 同じメニューを隣接させる（待機中のみ）
+  const result: typeof scored = []
+  const used = new Set<number>()
+
+  for (const item of scored) {
+    if (used.has(item.id)) continue
+    used.add(item.id)
+    result.push(item)
+
+    // 同じメニューIDの待機中のものを直後に並べる
+    const sameMenu = scored.filter(s => !used.has(s.id) && s.menu.id === item.menu.id)
+    for (const same of sameMenu) {
+      used.add(same.id)
+      result.push(same)
+    }
+  }
+
+  // バッチリーダーフラグ（待機中のみカウント）
+  return result.map(o => {
+    const sameMenuItems = result.filter(s => s.menu.id === o.menu.id)
+    const isLeader = sameMenuItems.length > 1 && sameMenuItems[0].id === o.id
+    return {
+      ...o,
+      isBatchLeader: isLeader,
+      batchCount: sameMenuItems.length,
+    }
   })
 }
 
@@ -35,7 +60,7 @@ function calcScore(
   const reasons: string[] = []
   let score = 0
 
-  // 1. 待機時間（段階的指数スコア）
+  // 1. 待機時間
   if (waitSec < warn) {
     score += waitMin * 5
   } else if (waitSec < danger) {
@@ -46,7 +71,7 @@ function calcScore(
     reasons.push('遅延!')
   }
 
-  // 2. 卓の飢餓防止（まだ何も出ていない卓を最優先）
+  // 2. 卓の初提供
   const tableOrders = all.filter(o => o.table === item.table)
   const tableHasServed = tableOrders.some(o => o.status === 'served')
   if (!tableHasServed) { score += 35; reasons.push('初提供') }
@@ -58,23 +83,23 @@ function calcScore(
   if (item.menu.cookTime >= 12) { score += 20; reasons.push('長調理') }
   else if (item.menu.cookTime >= 8) score += 10
 
-  // 5. 同じ設備の料理がまとまっているバッチボーナス
+  // 5. 同じ設備のバッチボーナス
   const sameEquipCount = all.filter(
     o => o.id !== item.id && o.status === 'pending' && o.menu.equip === item.menu.equip && item.menu.equip !== 'cold'
   ).length
   if (sameEquipCount > 0) { score += Math.min(sameEquipCount * 8, 24); reasons.push(`同設備×${sameEquipCount + 1}`) }
 
-  // 6. 同じメニューが複数卓（まとめて調理できる）
+  // 6. 同じメニューのまとめボーナス（待機中のみ）
   const sameMenuCount = all.filter(
-    o => o.id !== item.id && o.menu.id === item.menu.id && (o.status === 'pending' || o.status === 'cooking')
+    o => o.id !== item.id && o.menu.id === item.menu.id && o.status === 'pending'
   ).length
-  if (sameMenuCount > 0) { score += 25; reasons.push(`まとめ調理×${sameMenuCount + 1}`) }
+  if (sameMenuCount > 0) { score += 40; reasons.push(`まとめ調理×${sameMenuCount + 1}`) }
 
-  // 7. 同卓にまとめて出せる料理がある
+  // 7. 同卓まとめ
   const sameTablePending = tableOrders.filter(o => o.id !== item.id && o.status === 'pending').length
   if (sameTablePending > 0) score += 8
 
-  // 8. 付きっきり必要度による減点
+  // 8. 付きっきり減点
   score -= item.menu.attn * 5
 
   // 9. ワンオペモード補正
@@ -84,7 +109,7 @@ function calcScore(
     if (item.menu.equip === 'cold') score += 10
   }
 
-  // 10. 藁焼き特別ルール（まとめ処理 or 単発待機）
+  // 10. 藁焼き特別ルール
   if (item.menu.equip === 'straw') {
     const strawPending = all.filter(o => o.id !== item.id && o.menu.equip === 'straw' && o.status === 'pending').length
     if (strawPending >= 1) { score += 30; reasons.push('藁焼きまとめ') }
