@@ -8,7 +8,7 @@ import { loadOrders, saveOrders, loadMenu, loadSettings, loadNextId, saveNextId 
 function formatWait(sec: number) {
   if (sec < 60) return `${sec}秒`
   const m = Math.floor(sec / 60); const s = sec % 60
-  return s > 0 ? `${m}分${s}秒` : `${m}分`
+  return s > 0 ? `${m}刁E{s}秒` : `${m}刁E
 }
 
 export default function OrdersPage() {
@@ -92,16 +92,16 @@ export default function OrdersPage() {
 
       {/* ヘッダー */}
       <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800">
-        <Link href="/kitchen" className="text-gray-400 text-2xl font-bold">←</Link>
-        <h1 className="text-lg font-bold text-amber-400">注文管理</h1>
+        <Link href="/kitchen" className="text-gray-400 text-2xl font-bold">ↁE/Link>
+        <h1 className="text-lg font-bold text-amber-400">注斁E��琁E/h1>
         <div className="w-8" />
       </div>
 
-      {/* STEP 1: 卓選択 */}
+      {/* STEP 1: 卓選抁E*/}
       {step === 'table' && (
         <div className="p-4">
           <div className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 text-center">
-            注文する卓を選んでください
+            注斁E��る卓を選んでください
           </div>
           <div className="grid grid-cols-4 gap-3 mb-6">
             {tables.map(t => {
@@ -119,21 +119,21 @@ export default function OrdersPage() {
                     'bg-gray-800 border-2 border-gray-700'
                   }`}>
                   <span className="text-2xl font-black">{t}</span>
-                  <span className="text-xs text-gray-400 mt-0.5">卓</span>
+                  <span className="text-xs text-gray-400 mt-0.5">十E/span>
                   {ws !== null && (
                     <span className={`text-xs font-bold mt-1 ${isDanger ? 'text-red-300' : isWarn ? 'text-amber-300' : 'text-green-300'}`}>
                       {formatWait(ws)}
                     </span>
                   )}
-                  {isDanger && <span className="text-xs text-red-300 animate-pulse">遅延!</span>}
+                  {isDanger && <span className="text-xs text-red-300 animate-pulse">遁E��!</span>}
                 </button>
               )
             })}
           </div>
 
-          {/* 卓別注文状況 */}
+          {/* 卓別注斁E��況E*/}
           <div className="bg-gray-900 rounded-2xl p-4">
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">現在の注文状況</div>
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">現在の注斁E��況E/div>
             {tables.map(t => {
               const tOrders = orders.filter(o => o.table === t)
               if (!tOrders.length) return null
@@ -141,7 +141,7 @@ export default function OrdersPage() {
               const cooking = tOrders.filter(o => o.status === 'cooking')
               return (
                 <div key={t} className="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0">
-                  <span className="text-lg font-black text-amber-400 w-8">{t}卓</span>
+                  <span className="text-lg font-black text-amber-400 w-8">{t}十E/span>
                   <div className="flex gap-2 flex-1 flex-wrap">
                     {cooking.map(o => (
                       <span key={o.id} className="text-xs bg-blue-800 text-blue-200 px-2 py-1 rounded-lg">{o.menu.name}</span>
@@ -161,20 +161,20 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* STEP 2: メニュー選択 */}
+      {/* STEP 2: メニュー選抁E*/}
       {step === 'menu' && selTable !== null && (
         <div className="p-4">
           <div className="flex items-center gap-3 mb-4">
             <button onClick={() => { setStep('table'); setCart([]) }}
-              className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm">← 戻る</button>
+              className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm">ↁE戻めE/button>
             <div className="flex-1 text-center">
-              <span className="text-2xl font-black text-amber-400">{selTable}卓</span>
-              <span className="text-gray-400 text-sm ml-2">のメニューを選択</span>
+              <span className="text-2xl font-black text-amber-400">{selTable}十E/span>
+              <span className="text-gray-400 text-sm ml-2">のメニューを選抁E/span>
             </div>
             {totalCartItems > 0 && (
               <button onClick={() => setStep('confirm')}
                 className="bg-amber-500 text-black font-black px-4 py-2 rounded-xl text-sm relative">
-                確認
+                確誁E
                 <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
                   {totalCartItems}
                 </span>
@@ -191,7 +191,7 @@ export default function OrdersPage() {
                     inCart ? 'bg-amber-900 border-2 border-amber-500' : 'bg-gray-800 border-2 border-gray-700'
                   }`}>
                   <div className="font-bold text-base mb-1">{m.name}</div>
-                  <div className="text-xs text-gray-400">{m.cookTime}分</div>
+                  <div className="text-xs text-gray-400">{m.cookTime}刁E/div>
                   {inCart && (
                     <div className="absolute top-2 right-2 bg-amber-500 text-black font-black text-sm w-7 h-7 rounded-full flex items-center justify-center">
                       {inCart.qty}
@@ -204,15 +204,15 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* STEP 3: 確認 */}
+      {/* STEP 3: 確誁E*/}
       {step === 'confirm' && selTable !== null && (
         <div className="p-4">
           <div className="flex items-center gap-3 mb-4">
             <button onClick={() => setStep('menu')}
-              className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm">← 戻る</button>
+              className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm">ↁE戻めE/button>
             <div className="flex-1 text-center">
-              <span className="text-2xl font-black text-amber-400">{selTable}卓</span>
-              <span className="text-gray-400 text-sm ml-2">の注文確認</span>
+              <span className="text-2xl font-black text-amber-400">{selTable}十E/span>
+              <span className="text-gray-400 text-sm ml-2">の注斁E��誁E/span>
             </div>
           </div>
 
@@ -221,17 +221,17 @@ export default function OrdersPage() {
               <div key={c.menu.id} className="flex items-center gap-3 py-3 border-b border-gray-800 last:border-0">
                 <div className="flex-1">
                   <div className="font-bold text-base">{c.menu.name}</div>
-                  <div className="text-xs text-gray-400">{c.menu.cookTime}分</div>
+                  <div className="text-xs text-gray-400">{c.menu.cookTime}刁E/div>
                 </div>
                 <div className="flex items-center gap-3">
                   <button onClick={() => removeFromCart(c.menu.id)}
                     className="w-10 h-10 bg-gray-700 rounded-xl text-white font-black text-xl flex items-center justify-center active:scale-95">
-                    −
+                    ∁E
                   </button>
                   <span className="text-xl font-black text-amber-400 w-8 text-center">{c.qty}</span>
                   <button onClick={() => addToCart(c.menu)}
                     className="w-10 h-10 bg-gray-700 rounded-xl text-white font-black text-xl flex items-center justify-center active:scale-95">
-                    ＋
+                    �E�E
                   </button>
                 </div>
               </div>
@@ -240,13 +240,13 @@ export default function OrdersPage() {
 
           <button onClick={submitCart}
             className="w-full bg-amber-500 hover:bg-amber-400 active:scale-98 text-black font-black py-5 rounded-2xl text-xl transition-all">
-            {selTable}卓に {totalCartItems}品 を注文する
+            {selTable}卓に {totalCartItems}品Eを注斁E��めE
           </button>
 
-          {/* 既存注文 */}
+          {/* 既存注斁E*/}
           {tableOrders.length > 0 && (
             <div className="mt-4 bg-gray-900 rounded-2xl p-4">
-              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">この卓の現在の注文</div>
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">こ�E卓�E現在の注斁E/div>
               {tableOrders.map(o => (
                 <div key={o.id} className="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0">
                   <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
@@ -257,14 +257,14 @@ export default function OrdersPage() {
                   <div className="flex gap-2">
                     {o.status === 'pending' && (
                       <button onClick={() => setStatus(o.id, 'cooking')}
-                        className="text-xs bg-blue-700 text-white px-3 py-1.5 rounded-lg font-bold active:scale-95">開始</button>
+                        className="text-xs bg-blue-700 text-white px-3 py-1.5 rounded-lg font-bold active:scale-95">開姁E/button>
                     )}
                     {o.status === 'cooking' && (
                       <button onClick={() => setStatus(o.id, 'served')}
-                        className="text-xs bg-green-700 text-white px-3 py-1.5 rounded-lg font-bold active:scale-95">完了</button>
+                        className="text-xs bg-green-700 text-white px-3 py-1.5 rounded-lg font-bold active:scale-95">完亁E/button>
                     )}
                     {o.status === 'served' && (
-                      <span className="text-xs text-gray-500 line-through">提供済</span>
+                      <span className="text-xs text-gray-500 line-through">提供渁E/span>
                     )}
                   </div>
                 </div>
@@ -277,9 +277,9 @@ export default function OrdersPage() {
       {/* 底部ナビ */}
       <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 flex">
         <Link href="/kitchen" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">厨房</Link>
-        <Link href="/orders" className="flex-1 py-4 text-center text-xs text-amber-400 font-bold border-t-2 border-amber-400">注文</Link>
+        <Link href="/orders" className="flex-1 py-4 text-center text-xs text-amber-400 font-bold border-t-2 border-amber-400">注斁E/Link>
         <Link href="/menu" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">メニュー</Link>
-        <Link href="/analytics" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">分析</Link>
+        <Link href="/analytics" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">刁E��</Link>
       </div>
       <div className="h-16" />
     </div>
