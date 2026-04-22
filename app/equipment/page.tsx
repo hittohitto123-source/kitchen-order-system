@@ -6,11 +6,11 @@ import type { Equipment, EquipType } from '../../lib/types'
 import { saveEquipment, loadEquipmentFromDB } from '../../lib/storage'
 
 const EQUIP_OPTIONS: { value: EquipType; label: string; color: string }[] = [
-  { value: 'cold',  label: '冷菜（火不要E��E, color: 'bg-blue-900 border-blue-600 text-blue-300' },
+  { value: 'cold',  label: '冷菜（火不要）', color: 'bg-blue-900 border-blue-600 text-blue-300' },
   { value: 'stove', label: 'コンロ',         color: 'bg-orange-900 border-orange-600 text-orange-300' },
   { value: 'grill', label: 'グリル',         color: 'bg-purple-900 border-purple-600 text-purple-300' },
   { value: 'fryer', label: 'フライヤー',     color: 'bg-red-900 border-red-600 text-red-300' },
-  { value: 'straw', label: '藁焼ぁE,         color: 'bg-yellow-900 border-yellow-600 text-yellow-300' },
+  { value: 'straw', label: '藁焼き',         color: 'bg-yellow-900 border-yellow-600 text-yellow-300' },
 ]
 
 const EMPTY = { name: '', type: 'stove' as EquipType, slots: 1 }
@@ -67,17 +67,15 @@ export default function EquipmentPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white pb-20" style={{fontFamily:'system-ui,sans-serif'}}>
 
-      {/* ヘッダー */}
       <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800">
-        <Link href="/kitchen" className="text-gray-400 text-2xl font-bold">ↁE/Link>
-        <h1 className="text-lg font-bold text-amber-400">設備管琁E/h1>
+        <Link href="/kitchen" className="text-gray-400 text-2xl font-bold">←</Link>
+        <h1 className="text-lg font-bold text-amber-400">設備管理</h1>
         <button onClick={handleSync}
           className={`text-xs px-3 py-1.5 rounded-lg font-bold ${syncing ? 'bg-blue-900 text-blue-300' : 'bg-blue-700 text-white'}`}>
           {syncing ? '...' : '同期'}
         </button>
       </div>
 
-      {/* タブ�E替 */}
       <div className="flex gap-2 p-4">
         <button onClick={() => { setMode('list'); setEditId(null); setForm(EMPTY) }}
           className={`flex-1 py-3 rounded-2xl font-bold text-sm ${mode === 'list' ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
@@ -85,25 +83,24 @@ export default function EquipmentPage() {
         </button>
         <button onClick={() => setMode('add')}
           className={`flex-1 py-3 rounded-2xl font-bold text-sm ${mode === 'add' ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
-          �E�E新規追加
+          + 新規追加
         </button>
       </div>
 
-      {/* 設備一覧 */}
       {mode === 'list' && (
         <div className="px-4">
           {saved && (
             <div className="bg-green-800 text-green-200 text-center py-3 rounded-2xl mb-4 font-bold">
-              保存しました�E�E
+              保存しました！
             </div>
           )}
           {equipment.length === 0 && (
             <div className="text-center py-16 text-gray-500">
               <div className="text-4xl mb-4">🔧</div>
-              <div className="font-bold mb-2">設備が登録されてぁE��せん</div>
+              <div className="font-bold mb-2">設備が登録されていません</div>
               <button onClick={() => setMode('add')}
                 className="bg-amber-500 text-black font-bold px-6 py-3 rounded-2xl mt-2">
-                最初�E設備を追加する
+                最初の設備を追加する
               </button>
             </div>
           )}
@@ -125,7 +122,7 @@ export default function EquipmentPage() {
                     </button>
                     <button onClick={() => startEdit(item)}
                       className="flex-1 py-2 rounded-xl text-xs font-bold bg-blue-800 text-blue-300">
-                      編雁E
+                      編集
                     </button>
                     <button onClick={() => commit(equipment.filter(e => e.id !== item.id))}
                       className="flex-1 py-2 rounded-xl text-xs font-bold bg-red-900 text-red-300">
@@ -139,14 +136,12 @@ export default function EquipmentPage() {
         </div>
       )}
 
-      {/* 追加・編雁E��ォーム */}
       {mode === 'add' && (
         <div className="px-4">
           <div className="text-sm font-bold text-gray-400 text-center mb-4">
-            {editId ? '✏︁E設備を編雁E : '�E�E新しい設備を追加'}
+            {editId ? '設備を編集' : '新しい設備を追加'}
           </div>
 
-          {/* 設備名 */}
           <div className="bg-gray-900 rounded-2xl p-4 mb-3">
             <label className="text-xs text-gray-400 block mb-2">設備名</label>
             <input type="text" value={form.name}
@@ -155,9 +150,8 @@ export default function EquipmentPage() {
               className="w-full bg-gray-800 text-white rounded-xl px-4 py-4 text-lg border-2 border-gray-700 focus:border-amber-500 outline-none" />
           </div>
 
-          {/* 設備�E種顁E*/}
           <div className="bg-gray-900 rounded-2xl p-4 mb-3">
-            <label className="text-xs text-gray-400 block mb-3">設備�E種顁E/label>
+            <label className="text-xs text-gray-400 block mb-3">設備の種類</label>
             <div className="grid grid-cols-2 gap-2">
               {EQUIP_OPTIONS.map(opt => (
                 <button key={opt.value} onClick={() => setForm(f => ({ ...f, type: opt.value }))}
@@ -170,10 +164,9 @@ export default function EquipmentPage() {
             </div>
           </div>
 
-          {/* 枠数 */}
           <div className="bg-gray-900 rounded-2xl p-4 mb-4">
             <label className="text-xs text-gray-400 block mb-3">
-              同時使用枠数�E�Espan className="text-amber-400 font-black text-xl">{form.slots}枠</span>
+              同時使用枠数：<span className="text-amber-400 font-black text-xl">{form.slots}枠</span>
             </label>
             <div className="flex gap-2">
               {[1,2,3,4,5,6].map(v => (
@@ -187,7 +180,6 @@ export default function EquipmentPage() {
             </div>
           </div>
 
-          {/* 保存�Eタン */}
           <div className="flex gap-3">
             <button onClick={handleSave}
               className="flex-1 bg-amber-500 active:scale-98 text-black font-black py-5 rounded-2xl text-lg">
@@ -196,19 +188,19 @@ export default function EquipmentPage() {
             {editId && (
               <button onClick={() => { setEditId(null); setForm(EMPTY); setMode('list') }}
                 className="bg-gray-700 text-white font-bold py-5 px-6 rounded-2xl text-lg">
-                ÁE
+                x
               </button>
             )}
           </div>
         </div>
       )}
 
-      {/* 底部ナビ */}
       <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 flex">
         <Link href="/kitchen" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">厨房</Link>
-        <Link href="/orders" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">注斁E/Link>
+        <Link href="/orders" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">注文</Link>
         <Link href="/menu" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">メニュー</Link>
-        <Link href="/analytics" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">刁E��</Link>
+        <Link href="/settings" className="flex-1 py-4 text-center text-xs text-amber-400 font-bold border-t-2 border-amber-400">設定</Link>
+        <Link href="/analytics" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">分析</Link>
       </div>
     </div>
   )
