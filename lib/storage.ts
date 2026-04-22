@@ -41,15 +41,12 @@ export async function saveMenu(menu: MenuItem[]): Promise<void> {
       bonus: m.bonus,
       active: m.active,
     }))
-    const { error } = await supabase.from('menus').upsert(rows)
-    if (error) console.error('saveMenu error:', error)
+    await supabase.from('menus').upsert(rows)
     const existingIds = menu.map(m => m.id)
     const { data: allRows } = await supabase.from('menus').select('id').eq('tenant_id', TENANT_ID)
     if (allRows) {
       const toDelete = allRows.map(r => r.id).filter(id => !existingIds.includes(id))
-      if (toDelete.length > 0) {
-        await supabase.from('menus').delete().in('id', toDelete)
-      }
+      if (toDelete.length > 0) await supabase.from('menus').delete().in('id', toDelete)
     }
   } catch (e) { console.error('saveMenu error:', e) }
 }
@@ -59,18 +56,6 @@ export function loadSettings(): ShopSettings {
   try {
     const s = localStorage.getItem('kitchen_settings')
     return s ? { ...DEFAULT_SETTINGS, ...JSON.parse(s) } : DEFAULT_SETTINGS
-  } catch { return DEFAULT_SETTINGS }
-}
-
-export async function loadSettingsFromDB(): Promise<ShopSettings> {
-  try {
-    const { data } = await supabase
-      .from('shop_settings')
-      .select('*')
-      .eq('tenant_id', TENANT_ID)
-      .single()
-    if (!data) return DEFAULT_SETTINGS
-    return { ...DEFAULT_SETTINGS, ...data.settings }
   } catch { return DEFAULT_SETTINGS }
 }
 
@@ -100,32 +85,42 @@ export async function loadOrdersFromDB(): Promise<OrderItem[]> {
       .select('*')
       .eq('tenant_id', TENANT_ID)
       .order('added_at', { ascending: true })
-    if (!data) return []
+    if (!data || data.length === 0) return []
     return data.map(row => ({
       id: row.id,
       table: row.table_number,
       menu: row.menu_data,
       status: row.status,
-      addedAt: row.added_at,
-      startedAt: row.started_at ?? undefined,
-      servedAt: row.served_at ?? undefined,
+      addedAt: Number(row.added_at),
+      startedAt: row.started_at ? Number(row.started_at) : undefined,
+      servedAt: row.served_at ? Number(row.served_at) : undefined,
     }))
   } catch { return [] }
 }
 
 export function saveOrders(orders: OrderItem[]): void {
   localStorage.setItem('kitchen_orders', JSON.stringify(orders))
+  if (orders.length === 0) return
   const rows = orders.map(o => ({
     id: o.id,
     tenant_id: TENANT_ID,
     table_number: o.table,
     menu_data: o.menu,
     status: o.status,
-    added_at: o.addedAt,
-    started_at: o.startedAt ?? null,
-    served_at: o.servedAt ?? null,
+    added_at: Number(o.addedAt),
+    started_at: o.startedAt ? Number(o.startedAt) : null,
+    served_at: o.servedAt ? Number(o.servedAt) : null,
   }))
-  supabase.from('kitchen_order_items').upsert(rows).then()
+  supabase.from('kitchen_order_items').upsert(rows).then(({ error }) => {
+    if (error) console.error('saveOrders error:', error)
+  })
+}
+
+export async function deleteServedOrders(): Promise<void> {
+  await supabase.from('kitchen_order_items')
+    .delete()
+    .eq('tenant_id', TENANT_ID)
+    .eq('status', 'served')
 }
 
 export function loadNextId(): number {
@@ -169,15 +164,12 @@ export async function saveEquipment(eq: Equipment[]): Promise<void> {
       slots: e.slots,
       active: e.active,
     }))
-    const { error } = await supabase.from('equipments').upsert(rows)
-    if (error) console.error('saveEquipment error:', error)
+    await supabase.from('equipments').upsert(rows)
     const existingIds = eq.map(e => e.id)
     const { data: allRows } = await supabase.from('equipments').select('id').eq('tenant_id', TENANT_ID)
     if (allRows) {
       const toDelete = allRows.map(r => r.id).filter(id => !existingIds.includes(id))
-      if (toDelete.length > 0) {
-        await supabase.from('equipments').delete().in('id', toDelete)
-      }
+      if (toDelete.length > 0) await supabase.from('equipments').delete().in('id', toDelete)
     }
   } catch (e) { console.error('saveEquipment error:', e) }
 }
