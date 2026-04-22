@@ -43,6 +43,7 @@ export default function KitchenPage() {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [dbSynced, setDbSynced] = useState(false)
   const [activeTab, setActiveTab] = useState<'priority' | 'tables' | 'add'>('priority')
+  const [batchModal, setBatchModal] = useState<{ order: OrderItem; sameMenuOrders: OrderItem[] } | null>(null)
   const alertedTables = useRef<Set<number>>(new Set())
 
   useEffect(() => {
@@ -82,12 +83,24 @@ export default function KitchenPage() {
 
   const commit = (updated: OrderItem[]) => { setOrders(updated); saveOrders(updated) }
 
-  const addOrder = () => {
-    const menu = menuList.find(m => m.id === selMenu)
-    if (!menu || !settings) return
-    const id = loadNextId()
-    commit([...orders, { id, table: Number(selTable), menu, status: 'pending', addedAt: Date.now() }])
-    saveNextId(id + 1)
+  const handleStartPress = (order: OrderItem) => {
+    const sameMenuOrders = orders.filter(
+      o => o.id !== order.id && o.menu.id === order.menu.id && o.status === 'pending'
+    )
+    if (sameMenuOrders.length > 0) {
+      setBatchModal({ order, sameMenuOrders })
+    } else {
+      startCooking([order.id])
+    }
+  }
+
+  const startCooking = (ids: number[]) => {
+    const t = Date.now()
+    const updated = orders.map(o =>
+      ids.includes(o.id) ? { ...o, status: 'cooking' as const, startedAt: t } : o
+    )
+    commit(updated)
+    setBatchModal(null)
   }
 
   const setStatus = async (id: number, status: OrderItem['status']) => {
@@ -102,6 +115,14 @@ export default function KitchenPage() {
       const order = updated.find(o => o.id === id)
       if (order) { alertedTables.current.delete(order.table); await logAnalytics(order) }
     }
+  }
+
+  const addOrder = () => {
+    const menu = menuList.find(m => m.id === selMenu)
+    if (!menu || !settings) return
+    const id = loadNextId()
+    commit([...orders, { id, table: Number(selTable), menu, status: 'pending', addedAt: Date.now() }])
+    saveNextId(id + 1)
   }
 
   const toggleOneOp = () => {
@@ -146,6 +167,7 @@ export default function KitchenPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white" style={{fontFamily:'system-ui,sans-serif'}}>
 
+      {/* 営業終了モーダル */}
       {showCloseConfirm && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:'1rem'}}>
           <div className="bg-gray-900 rounded-3xl p-6 w-full max-w-sm border-2 border-red-700">
@@ -157,6 +179,61 @@ export default function KitchenPage() {
               <button onClick={handleCloseBusiness}
                 className="flex-1 bg-red-600 text-white font-black py-4 rounded-2xl text-lg">終了する</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* バッチ選択モーダル */}
+      {batchModal && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:'1rem'}}>
+          <div className="bg-gray-900 rounded-3xl p-6 w-full max-w-sm border-2 border-blue-700">
+            <h2 className="text-xl font-black text-blue-400 mb-2 text-center">
+              {batchModal.order.menu.name}
+            </h2>
+            <p className="text-gray-400 text-sm text-center mb-4">
+              同じメニューが{batchModal.sameMenuOrders.length + 1}件あります。何件まとめて調理しますか？
+            </p>
+
+            {/* 各卓の一覧 */}
+            <div className="bg-gray-800 rounded-2xl p-3 mb-4">
+              {[batchModal.order, ...batchModal.sameMenuOrders].map(o => (
+                <div key={o.id} className="flex items-center justify-between py-2 border-b border-gray-700 last:border-0">
+                  <span className="text-amber-400 font-black">{o.table}卓</span>
+                  <span className="text-xs text-gray-400">待機{formatWait(Math.floor((now - o.addedAt) / 1000))}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* 選択ボタン */}
+            <div className="flex flex-col gap-2 mb-3">
+              {/* 1件だけ */}
+              <button onClick={() => startCooking([batchModal.order.id])}
+                className="w-full bg-gray-700 text-white font-bold py-3 rounded-2xl text-sm active:scale-95">
+                {batchModal.order.table}卓だけ開始（1件）
+              </button>
+
+              {/* 2件以上の場合、個別選択 */}
+              {batchModal.sameMenuOrders.map((_, idx) => {
+                const selectedOrders = [batchModal.order, ...batchModal.sameMenuOrders.slice(0, idx + 1)]
+                return (
+                  <button key={idx} onClick={() => startCooking(selectedOrders.map(o => o.id))}
+                    className="w-full bg-blue-700 text-white font-bold py-3 rounded-2xl text-sm active:scale-95">
+                    {selectedOrders.map(o => `${o.table}卓`).join(' + ')} をまとめて開始（{selectedOrders.length}件）
+                  </button>
+                )
+              })}
+
+              {/* 全件 */}
+              <button onClick={() => startCooking([batchModal.order, ...batchModal.sameMenuOrders].map(o => o.id))}
+                className="w-full bg-green-600 text-white font-black py-3 rounded-2xl text-sm active:scale-95">
+                全{batchModal.sameMenuOrders.length + 1}件まとめて開始
+              </button>
+            </div>
+
+            <button onClick={() => setBatchModal(null)}
+              className="w-full bg-gray-800 text-gray-400 font-bold py-3 rounded-2xl text-sm">
+              キャンセル
+            </button>
           </div>
         </div>
       )}
@@ -183,8 +260,6 @@ export default function KitchenPage() {
             </button>
           </div>
         </div>
-
-        {/* 統計 */}
         <div className="grid grid-cols-4 gap-1.5">
           <div className="bg-gray-800 rounded-xl py-1.5 text-center">
             <div className="text-xl font-black text-amber-400">{pending.length}</div>
@@ -223,9 +298,9 @@ export default function KitchenPage() {
 
       {/* 優先順位タブ - 左右2カラム */}
       {activeTab === 'priority' && (
-        <div className="flex gap-0 h-full pb-16" style={{height:'calc(100vh - 160px)'}}>
+        <div className="flex gap-0 overflow-hidden" style={{height:'calc(100vh - 160px)'}}>
 
-          {/* 左カラム：これから調理（優先順位順） */}
+          {/* 左カラム：待機中（優先順位順） */}
           <div className="flex-1 border-r border-gray-800 overflow-y-auto">
             <div className="bg-gray-900 px-3 py-2 border-b border-gray-800 sticky top-0 z-10">
               <div className="text-xs font-black text-amber-400 uppercase tracking-wider">
@@ -245,7 +320,7 @@ export default function KitchenPage() {
                 const isWarn = waitSec >= settings.warningThresholdSec
                 return (
                   <div key={o.id}>
-                    {o.isBatchLeader && o.batchCount > 1 && (
+                    {o.isBatchLeader && (
                       <div className="text-xs text-green-400 font-bold bg-green-950 border border-green-800 px-2 py-0.5 rounded-full mb-1 inline-block">
                         まとめて{o.batchCount}件
                       </div>
@@ -265,7 +340,7 @@ export default function KitchenPage() {
                           {isDanger && <div className="text-xs text-red-400 font-black animate-pulse">遅延!</div>}
                         </div>
                       </div>
-                      <button onClick={() => setStatus(o.id, 'cooking')}
+                      <button onClick={() => handleStartPress(o)}
                         className="w-full bg-blue-600 active:scale-95 text-white py-2.5 rounded-lg text-sm font-black">
                         開始
                       </button>
