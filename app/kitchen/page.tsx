@@ -182,6 +182,17 @@ export default function KitchenPage() {
     return Math.floor((now - Math.min(...items.map(o => o.addedAt))) / 1000)
   }
 
+  // 設備使用状況
+  const equipUsage: Record<string, number> = {}
+  cooking.forEach(o => { equipUsage[o.menu.equip] = (equipUsage[o.menu.equip] || 0) + 1 })
+  const equipCapacity: Record<string, number> = {
+    cold: 99,
+    stove: settings.stoveSlots || 4,
+    grill: settings.grillSlots || 3,
+    fryer: settings.hasFryer ? (settings.fryerSlots || 2) : 0,
+    straw: settings.hasStraw ? 2 : 0,
+  }
+
   return (
     <div className="min-h-screen bg-gray-950 text-white" style={{fontFamily:'system-ui,sans-serif'}}>
 
@@ -203,9 +214,7 @@ export default function KitchenPage() {
       {batchModal && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:'1rem'}}>
           <div className="bg-gray-900 rounded-3xl p-6 w-full max-w-sm border-2 border-blue-700">
-            <h2 className="text-xl font-black text-blue-400 mb-2 text-center">
-              {batchModal.order.menu.name}
-            </h2>
+            <h2 className="text-xl font-black text-blue-400 mb-2 text-center">{batchModal.order.menu.name}</h2>
             <p className="text-gray-400 text-sm text-center mb-4">
               同じメニューが{batchModal.sameMenuOrders.length + 1}件あります。何件まとめて調理しますか？
             </p>
@@ -227,7 +236,7 @@ export default function KitchenPage() {
                 return (
                   <button key={idx} onClick={() => startCooking(selectedOrders.map(o => o.id))}
                     className="w-full bg-blue-700 text-white font-bold py-3 rounded-2xl text-sm active:scale-95">
-                    {selectedOrders.map(o => `${o.table}卓`).join(' + ')} をまとめて開始（{selectedOrders.length}件）
+                    {selectedOrders.map(o => `${o.table}卓`).join(' + ')} まとめて開始（{selectedOrders.length}件）
                   </button>
                 )
               })}
@@ -244,6 +253,7 @@ export default function KitchenPage() {
         </div>
       )}
 
+      {/* ヘッダー */}
       <div className="bg-gray-900 border-b border-gray-800 px-3 py-2">
         <div className="flex items-center justify-between mb-2">
           <div>
@@ -265,7 +275,9 @@ export default function KitchenPage() {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-1.5">
+
+        {/* 統計 */}
+        <div className="grid grid-cols-4 gap-1.5 mb-2">
           <div className="bg-gray-800 rounded-xl py-1.5 text-center">
             <div className="text-xl font-black text-amber-400">{pending.length}</div>
             <div className="text-xs text-gray-400">待機</div>
@@ -283,8 +295,26 @@ export default function KitchenPage() {
             <div className="text-xs text-gray-400">遅延卓</div>
           </div>
         </div>
+
+        {/* 設備使用状況 */}
+        <div className="flex gap-1.5 flex-wrap">
+          {Object.entries(equipCapacity).filter(([, cap]) => cap > 0 && cap < 99).map(([equip, cap]) => {
+            const usage = equipUsage[equip] || 0
+            const isFull = usage >= cap
+            return (
+              <div key={equip} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold ${
+                isFull ? 'bg-red-900 text-red-300' : usage > 0 ? 'bg-blue-900 text-blue-300' : 'bg-gray-800 text-gray-500'
+              }`}>
+                <span>{EQUIP_LABEL[equip]}</span>
+                <span>{usage}/{cap}</span>
+                {isFull && <span>満</span>}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
+      {/* タブ */}
       <div className="flex bg-gray-900 border-b border-gray-800">
         {[
           { key: 'priority', label: '優先順位' },
@@ -300,13 +330,14 @@ export default function KitchenPage() {
         ))}
       </div>
 
+      {/* 優先順位タブ */}
       {activeTab === 'priority' && (
-        <div className="flex gap-0 overflow-hidden" style={{height:'calc(100vh - 160px)'}}>
+        <div className="flex gap-0 overflow-hidden" style={{height:'calc(100vh - 185px)'}}>
+
+          {/* 左：待機中 */}
           <div className="flex-1 border-r border-gray-800 overflow-y-auto">
             <div className="bg-gray-900 px-3 py-2 border-b border-gray-800 sticky top-0 z-10">
-              <div className="text-xs font-black text-amber-400 uppercase tracking-wider">
-                次にやること ({scheduled.length})
-              </div>
+              <div className="text-xs font-black text-amber-400">次にやること ({scheduled.length})</div>
             </div>
             <div className="p-2">
               {scheduled.length === 0 && (
@@ -319,6 +350,7 @@ export default function KitchenPage() {
                 const waitSec = Math.floor((now - o.addedAt) / 1000)
                 const isDanger = waitSec >= settings.dangerThresholdSec
                 const isWarn = waitSec >= settings.warningThresholdSec
+                const isBlocked = o.equipBlocked
                 return (
                   <div key={o.id}>
                     {o.isBatchLeader && (
@@ -327,10 +359,15 @@ export default function KitchenPage() {
                       </div>
                     )}
                     <div className={`rounded-xl p-2.5 mb-2 border ${
-                      o.batchCount > 1 ? 'border-l-4 border-l-green-500 ' : ''
-                    }${isDanger ? 'bg-red-950 border-red-700' : isWarn ? 'bg-amber-950 border-amber-700' : 'bg-gray-800 border-gray-700'}`}>
+                      isBlocked ? 'bg-gray-900 border-gray-700 opacity-60' :
+                      o.batchCount > 1 ? 'border-l-4 border-l-green-500 ' + (isDanger ? 'bg-red-950 border-red-700' : isWarn ? 'bg-amber-950 border-amber-700' : 'bg-gray-800 border-gray-700') :
+                      isDanger ? 'bg-red-950 border-red-700' :
+                      isWarn ? 'bg-amber-950 border-amber-700' :
+                      'bg-gray-800 border-gray-700'
+                    }`}>
                       <div className="flex items-start gap-2 mb-2">
                         <span className={`text-lg font-black w-6 text-center flex-shrink-0 ${
+                          isBlocked ? 'text-gray-600' :
                           isDanger ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-gray-500'
                         }`}>{i + 1}</span>
                         <div className="flex-1 min-w-0">
@@ -338,12 +375,23 @@ export default function KitchenPage() {
                           <div className="text-xs text-amber-400 font-bold">{o.table}卓</div>
                           <div className="text-xs text-gray-500">{EQUIP_LABEL[o.menu.equip]} · {o.menu.cookTime}分</div>
                           {waitSec > 0 && <div className="text-xs text-gray-500">待機{formatWait(waitSec)}</div>}
-                          {isDanger && <div className="text-xs text-red-400 font-black animate-pulse">遅延!</div>}
+                          {isDanger && !isBlocked && <div className="text-xs text-red-400 font-black animate-pulse">遅延!</div>}
+                          {isBlocked && (
+                            <div className="text-xs text-gray-500 font-bold">
+                              {EQUIP_LABEL[o.menu.equip]}が満杯 - 待機中
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <button onClick={() => handleStartPress(o)}
-                        className="w-full bg-blue-600 active:scale-95 text-white py-2.5 rounded-lg text-sm font-black">
-                        開始
+                      <button
+                        onClick={() => !isBlocked && handleStartPress(o)}
+                        disabled={isBlocked}
+                        className={`w-full py-2.5 rounded-lg text-sm font-black ${
+                          isBlocked
+                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                            : 'bg-blue-600 active:scale-95 text-white'
+                        }`}>
+                        {isBlocked ? '設備満杯' : '開始'}
                       </button>
                     </div>
                   </div>
@@ -352,11 +400,10 @@ export default function KitchenPage() {
             </div>
           </div>
 
+          {/* 右：調理中 */}
           <div className="flex-1 overflow-y-auto">
             <div className="bg-gray-900 px-3 py-2 border-b border-gray-800 sticky top-0 z-10">
-              <div className="text-xs font-black text-blue-400 uppercase tracking-wider">
-                調理中 ({cooking.length})
-              </div>
+              <div className="text-xs font-black text-blue-400">調理中 ({cooking.length})</div>
             </div>
             <div className="p-2">
               {cooking.length === 0 && (
@@ -373,6 +420,11 @@ export default function KitchenPage() {
                       <div className="font-black text-sm leading-tight">{o.menu.name}</div>
                       <div className="text-xs text-amber-400 font-bold">{o.table}卓</div>
                       <div className="text-xs text-gray-500">{EQUIP_LABEL[o.menu.equip]} · {o.menu.cookTime}分</div>
+                      {o.startedAt && (
+                        <div className="text-xs text-blue-300">
+                          経過{formatWait(Math.floor((now - o.startedAt) / 1000))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <button onClick={() => setStatus(o.id, 'served')}
@@ -386,6 +438,7 @@ export default function KitchenPage() {
         </div>
       )}
 
+      {/* 卓一覧タブ */}
       {activeTab === 'tables' && (
         <div className="p-3 pb-24">
           <div className="grid grid-cols-3 gap-3">
@@ -427,6 +480,7 @@ export default function KitchenPage() {
         </div>
       )}
 
+      {/* 注文追加タブ */}
       {activeTab === 'add' && (
         <div className="p-3 pb-24">
           <div className="bg-gray-900 rounded-2xl p-4 mb-3">
