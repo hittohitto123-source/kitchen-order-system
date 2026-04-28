@@ -10,6 +10,16 @@ const EQUIP_LABEL: Record<string, string> = {
   cold: '冷菜', stove: 'コンロ', grill: 'グリル', fryer: 'フライヤー', straw: '藁焼き'
 }
 
+const EQUIP_TABS = [
+  { key: 'all',     label: 'すべて' },
+  { key: 'popular', label: '人気🔥' },
+  { key: 'cold',    label: '冷菜' },
+  { key: 'straw',   label: '藁焼き' },
+  { key: 'stove',   label: 'コンロ' },
+  { key: 'fryer',   label: 'フライヤー' },
+  { key: 'grill',   label: 'グリル' },
+]
+
 function formatWait(sec: number) {
   if (sec < 60) return `${sec}秒`
   const m = Math.floor(sec / 60); const s = sec % 60
@@ -43,7 +53,9 @@ export default function KitchenPage() {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [dbSynced, setDbSynced] = useState(false)
   const [activeTab, setActiveTab] = useState<'priority' | 'tables' | 'add'>('priority')
+  const [activeEquip, setActiveEquip] = useState('all')
   const [batchModal, setBatchModal] = useState<{ order: OrderItem; sameMenuOrders: OrderItem[] } | null>(null)
+  const [orderCount, setOrderCount] = useState<Record<string, number>>({})
   const alertedTables = useRef<Set<number>>(new Set())
 
   useEffect(() => {
@@ -57,6 +69,9 @@ export default function KitchenPage() {
         setOrders(dbOrders); saveOrders(dbOrders)
         const maxId = Math.max(...dbOrders.map(o => o.id), 0)
         saveNextId(maxId + 1)
+        const count: Record<string, number> = {}
+        dbOrders.forEach(o => { count[o.menu.id] = (count[o.menu.id] || 0) + 1 })
+        setOrderCount(count)
       } else { setOrders(loadOrders()) }
       setDbSynced(true)
     })
@@ -69,6 +84,9 @@ export default function KitchenPage() {
       setNow(newNow)
       const currentOrders = loadOrders()
       setOrders(currentOrders)
+      const count: Record<string, number> = {}
+      currentOrders.forEach(o => { count[o.menu.id] = (count[o.menu.id] || 0) + 1 })
+      setOrderCount(count)
       const currentSettings = loadSettings()
       if (currentSettings.soundAlert) {
         const dangerTables = currentOrders
@@ -135,12 +153,13 @@ export default function KitchenPage() {
     }
   }
 
-  const addOrder = () => {
-    const menu = menuList.find(m => m.id === selMenu)
+  const addOrder = (menuId?: string) => {
+    const menu = menuList.find(m => m.id === (menuId || selMenu))
     if (!menu || !settings) return
     const id = loadNextId()
     commit([...orders, { id, table: Number(selTable), menu, status: 'pending', addedAt: Date.now() }])
     saveNextId(id + 1)
+    setOrderCount(prev => ({ ...prev, [menu.id]: (prev[menu.id] || 0) + 1 }))
   }
 
   const toggleOneOp = () => {
@@ -157,6 +176,17 @@ export default function KitchenPage() {
 
   const handleCloseBusiness = () => {
     clearAllOrders(); setOrders([]); alertedTables.current.clear(); setShowCloseConfirm(false)
+  }
+
+  const filteredMenu = () => {
+    let filtered = menuList
+    if (activeEquip === 'popular') {
+      return [...menuList].sort((a, b) => (orderCount[b.id] || 0) - (orderCount[a.id] || 0)).slice(0, 12)
+    }
+    if (activeEquip !== 'all') {
+      filtered = menuList.filter(m => m.equip === activeEquip)
+    }
+    return [...filtered].sort((a, b) => (orderCount[b.id] || 0) - (orderCount[a.id] || 0))
   }
 
   if (!settings || !dbSynced) return (
@@ -182,7 +212,6 @@ export default function KitchenPage() {
     return Math.floor((now - Math.min(...items.map(o => o.addedAt))) / 1000)
   }
 
-  // 設備使用状況
   const equipUsage: Record<string, number> = {}
   cooking.forEach(o => { equipUsage[o.menu.equip] = (equipUsage[o.menu.equip] || 0) + 1 })
   const equipCapacity: Record<string, number> = {
@@ -275,8 +304,6 @@ export default function KitchenPage() {
             </button>
           </div>
         </div>
-
-        {/* 統計 */}
         <div className="grid grid-cols-4 gap-1.5 mb-2">
           <div className="bg-gray-800 rounded-xl py-1.5 text-center">
             <div className="text-xl font-black text-amber-400">{pending.length}</div>
@@ -295,8 +322,6 @@ export default function KitchenPage() {
             <div className="text-xs text-gray-400">遅延卓</div>
           </div>
         </div>
-
-        {/* 設備使用状況 */}
         <div className="flex gap-1.5 flex-wrap">
           {Object.entries(equipCapacity).filter(([, cap]) => cap > 0 && cap < 99).map(([equip, cap]) => {
             const usage = equipUsage[equip] || 0
@@ -333,8 +358,6 @@ export default function KitchenPage() {
       {/* 優先順位タブ */}
       {activeTab === 'priority' && (
         <div className="flex gap-0 overflow-hidden" style={{height:'calc(100vh - 185px)'}}>
-
-          {/* 左：待機中 */}
           <div className="flex-1 border-r border-gray-800 overflow-y-auto">
             <div className="bg-gray-900 px-3 py-2 border-b border-gray-800 sticky top-0 z-10">
               <div className="text-xs font-black text-amber-400">次にやること ({scheduled.length})</div>
@@ -367,8 +390,7 @@ export default function KitchenPage() {
                     }`}>
                       <div className="flex items-start gap-2 mb-2">
                         <span className={`text-lg font-black w-6 text-center flex-shrink-0 ${
-                          isBlocked ? 'text-gray-600' :
-                          isDanger ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-gray-500'
+                          isBlocked ? 'text-gray-600' : isDanger ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-gray-500'
                         }`}>{i + 1}</span>
                         <div className="flex-1 min-w-0">
                           <div className="font-black text-sm leading-tight">{o.menu.name}</div>
@@ -376,20 +398,12 @@ export default function KitchenPage() {
                           <div className="text-xs text-gray-500">{EQUIP_LABEL[o.menu.equip]} · {o.menu.cookTime}分</div>
                           {waitSec > 0 && <div className="text-xs text-gray-500">待機{formatWait(waitSec)}</div>}
                           {isDanger && !isBlocked && <div className="text-xs text-red-400 font-black animate-pulse">遅延!</div>}
-                          {isBlocked && (
-                            <div className="text-xs text-gray-500 font-bold">
-                              {EQUIP_LABEL[o.menu.equip]}が満杯 - 待機中
-                            </div>
-                          )}
+                          {isBlocked && <div className="text-xs text-gray-500 font-bold">{EQUIP_LABEL[o.menu.equip]}が満杯</div>}
                         </div>
                       </div>
-                      <button
-                        onClick={() => !isBlocked && handleStartPress(o)}
-                        disabled={isBlocked}
+                      <button onClick={() => !isBlocked && handleStartPress(o)} disabled={isBlocked}
                         className={`w-full py-2.5 rounded-lg text-sm font-black ${
-                          isBlocked
-                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                            : 'bg-blue-600 active:scale-95 text-white'
+                          isBlocked ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-blue-600 active:scale-95 text-white'
                         }`}>
                         {isBlocked ? '設備満杯' : '開始'}
                       </button>
@@ -400,7 +414,6 @@ export default function KitchenPage() {
             </div>
           </div>
 
-          {/* 右：調理中 */}
           <div className="flex-1 overflow-y-auto">
             <div className="bg-gray-900 px-3 py-2 border-b border-gray-800 sticky top-0 z-10">
               <div className="text-xs font-black text-blue-400">調理中 ({cooking.length})</div>
@@ -421,9 +434,7 @@ export default function KitchenPage() {
                       <div className="text-xs text-amber-400 font-bold">{o.table}卓</div>
                       <div className="text-xs text-gray-500">{EQUIP_LABEL[o.menu.equip]} · {o.menu.cookTime}分</div>
                       {o.startedAt && (
-                        <div className="text-xs text-blue-300">
-                          経過{formatWait(Math.floor((now - o.startedAt) / 1000))}
-                        </div>
+                        <div className="text-xs text-blue-300">経過{formatWait(Math.floor((now - o.startedAt) / 1000))}</div>
                       )}
                     </div>
                   </div>
@@ -482,13 +493,14 @@ export default function KitchenPage() {
 
       {/* 注文追加タブ */}
       {activeTab === 'add' && (
-        <div className="p-3 pb-24">
-          <div className="bg-gray-900 rounded-2xl p-4 mb-3">
-            <div className="text-xs text-gray-400 uppercase tracking-wider mb-3">卓番号</div>
-            <div className="grid grid-cols-5 gap-2">
+        <div className="pb-24 overflow-y-auto" style={{height:'calc(100vh - 185px)'}}>
+          {/* 卓番号 */}
+          <div className="bg-gray-900 px-4 py-3 border-b border-gray-800">
+            <div className="text-xs text-gray-400 uppercase tracking-wider mb-2">卓番号</div>
+            <div className="flex overflow-x-auto gap-2 no-scrollbar">
               {tables.map(t => (
                 <button key={t} onClick={() => setSelTable(String(t))}
-                  className={`py-4 rounded-xl font-black text-xl transition-all active:scale-95 ${
+                  className={`flex-shrink-0 w-12 h-12 rounded-xl font-black text-lg transition-all active:scale-95 ${
                     selTable === String(t) ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'
                   }`}>
                   {t}
@@ -497,28 +509,51 @@ export default function KitchenPage() {
             </div>
           </div>
 
-          <div className="bg-gray-900 rounded-2xl p-4 mb-3">
-            <div className="text-xs text-gray-400 uppercase tracking-wider mb-3">メニュー</div>
-            <div className="grid grid-cols-2 gap-2">
-              {menuList.map(m => (
-                <button key={m.id} onClick={() => setSelMenu(m.id)}
-                  className={`p-3 rounded-xl text-left transition-all active:scale-95 border-2 ${
-                    selMenu === m.id ? 'bg-amber-900 border-amber-500' : 'bg-gray-800 border-gray-700'
-                  }`}>
-                  <div className="font-bold text-sm">{m.name}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{m.cookTime}分 · {EQUIP_LABEL[m.equip]}</div>
-                </button>
-              ))}
-            </div>
+          {/* ジャンルタブ */}
+          <div className="flex overflow-x-auto gap-2 px-4 py-3 bg-gray-900 border-b border-gray-800 no-scrollbar">
+            {EQUIP_TABS.map(tab => (
+              <button key={tab.key} onClick={() => setActiveEquip(tab.key)}
+                className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95 ${
+                  activeEquip === tab.key ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'
+                }`}>
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          <button onClick={addOrder}
-            className="w-full bg-amber-500 active:scale-98 text-black font-black py-5 rounded-2xl text-xl transition-all">
-            {selTable}卓に注文する
-          </button>
+          {/* メニューグリッド */}
+          <div className="grid grid-cols-2 gap-3 p-3">
+            {filteredMenu().map(m => {
+              const count = orderCount[m.id] || 0
+              return (
+                <button key={m.id} onClick={() => { setSelMenu(m.id); addOrder(m.id) }}
+                  className={`p-3 rounded-xl text-left transition-all active:scale-95 border-2 relative ${
+                    selMenu === m.id ? 'bg-amber-900 border-amber-500' : 'bg-gray-800 border-gray-700'
+                  }`}>
+                  {count > 0 && (
+                    <div className="absolute top-2 left-2 bg-gray-700 text-gray-300 text-xs px-1.5 py-0.5 rounded-full font-bold">
+                      {count}回
+                    </div>
+                  )}
+                  <div className="font-bold text-sm mt-4 mb-1">{m.name}</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs text-gray-400">{m.cookTime}分</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                      m.equip === 'cold' ? 'bg-blue-900 text-blue-300' :
+                      m.equip === 'straw' ? 'bg-yellow-900 text-yellow-300' :
+                      m.equip === 'stove' ? 'bg-orange-900 text-orange-300' :
+                      m.equip === 'fryer' ? 'bg-red-900 text-red-300' :
+                      'bg-purple-900 text-purple-300'
+                    }`}>{EQUIP_LABEL[m.equip]}</span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
 
+          {/* この卓の現在の注文 */}
           {orders.filter(o => o.table === Number(selTable)).length > 0 && (
-            <div className="mt-4 bg-gray-900 rounded-2xl p-4">
+            <div className="mx-3 mb-3 bg-gray-900 rounded-2xl p-4">
               <div className="text-xs text-gray-400 uppercase tracking-wider mb-3">{selTable}卓の現在の注文</div>
               {orders.filter(o => o.table === Number(selTable)).map(o => (
                 <div key={o.id} className="flex items-center gap-3 py-3 border-b border-gray-800 last:border-0">
