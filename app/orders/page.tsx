@@ -5,6 +5,20 @@ import Link from 'next/link'
 import type { OrderItem, MenuItem } from '../../lib/types'
 import { loadOrders, saveOrders, loadSettings, loadNextId, saveNextId, loadMenuFromDB } from '../../lib/storage'
 
+const EQUIP_LABEL: Record<string, string> = {
+  cold: '冷菜', stove: 'コンロ', grill: 'グリル', fryer: 'フライヤー', straw: '藁焼き'
+}
+
+const EQUIP_TABS = [
+  { key: 'all',   label: 'すべて' },
+  { key: 'popular', label: '人気' },
+  { key: 'cold',  label: '冷菜' },
+  { key: 'straw', label: '藁焼き' },
+  { key: 'stove', label: 'コンロ' },
+  { key: 'fryer', label: 'フライヤー' },
+  { key: 'grill', label: 'グリル' },
+]
+
 function formatWait(sec: number) {
   if (sec < 60) return `${sec}秒`
   const m = Math.floor(sec / 60); const s = sec % 60
@@ -19,20 +33,35 @@ export default function OrdersPage() {
   const [selTable, setSelTable] = useState<number | null>(null)
   const [cart, setCart] = useState<{ menu: MenuItem; qty: number }[]>([])
   const [step, setStep] = useState<'table' | 'menu' | 'confirm'>('table')
+  const [activeEquip, setActiveEquip] = useState('all')
   const [loading, setLoading] = useState(true)
+  const [orderCount, setOrderCount] = useState<Record<string, number>>({})
 
   useEffect(() => {
-    setOrders(loadOrders())
     setTableCount(loadSettings().tableCount)
+    const allOrders = loadOrders()
+    setOrders(allOrders)
+
+    // 注文回数カウント
+    const count: Record<string, number> = {}
+    allOrders.forEach(o => { count[o.menu.id] = (count[o.menu.id] || 0) + 1 })
+    setOrderCount(count)
+
     loadMenuFromDB().then(menuData => {
       setMenuList(menuData.filter(m => m.active))
-      localStorage.setItem('kitchen_menu', JSON.stringify(menuData))
       setLoading(false)
     })
   }, [])
 
   useEffect(() => {
-    const t = setInterval(() => { setNow(Date.now()); setOrders(loadOrders()) }, 3000)
+    const t = setInterval(() => {
+      setNow(Date.now())
+      const allOrders = loadOrders()
+      setOrders(allOrders)
+      const count: Record<string, number> = {}
+      allOrders.forEach(o => { count[o.menu.id] = (count[o.menu.id] || 0) + 1 })
+      setOrderCount(count)
+    }, 3000)
     return () => clearInterval(t)
   }, [])
 
@@ -67,6 +96,9 @@ export default function OrdersPage() {
     }
     commit([...orders, ...newOrders])
     saveNextId(id)
+    const count = { ...orderCount }
+    cart.forEach(c => { count[c.menu.id] = (count[c.menu.id] || 0) + c.qty })
+    setOrderCount(count)
     setCart([])
     setStep('table')
     setSelTable(null)
@@ -86,6 +118,19 @@ export default function OrdersPage() {
     const items = orders.filter(o => o.table === table && o.status !== 'served')
     if (!items.length) return null
     return Math.floor((now - Math.min(...items.map(o => o.addedAt))) / 1000)
+  }
+
+  // フィルタリング＋ソート
+  const filteredMenu = () => {
+    let filtered = menuList
+    if (activeEquip === 'popular') {
+      filtered = [...menuList].sort((a, b) => (orderCount[b.id] || 0) - (orderCount[a.id] || 0))
+      return filtered.slice(0, 12)
+    }
+    if (activeEquip !== 'all') {
+      filtered = menuList.filter(m => m.equip === activeEquip)
+    }
+    return [...filtered].sort((a, b) => (orderCount[b.id] || 0) - (orderCount[a.id] || 0))
   }
 
   const tableOrders = selTable ? orders.filter(o => o.table === selTable) : []
@@ -109,6 +154,7 @@ export default function OrdersPage() {
         <div className="w-8" />
       </div>
 
+      {/* STEP 1: 卓選択 */}
       {step === 'table' && (
         <div className="p-4">
           <div className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 text-center">
@@ -141,11 +187,11 @@ export default function OrdersPage() {
               )
             })}
           </div>
+
           <div className="bg-gray-900 rounded-2xl p-4">
             <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">現在の注文状況</div>
             {tables.map(t => {
               const tOrders = orders.filter(o => o.table === t)
-              if (!tOrders.length) return null
               const pending = tOrders.filter(o => o.status === 'pending')
               const cooking = tOrders.filter(o => o.status === 'cooking')
               if (!pending.length && !cooking.length) return null
@@ -171,9 +217,10 @@ export default function OrdersPage() {
         </div>
       )}
 
+      {/* STEP 2: メニュー選択 */}
       {step === 'menu' && selTable !== null && (
-        <div className="p-4">
-          <div className="flex items-center gap-3 mb-4">
+        <div>
+          <div className="flex items-center gap-3 px-4 py-3 bg-gray-900 border-b border-gray-800">
             <button onClick={() => { setStep('table'); setCart([]) }}
               className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm">← 戻る</button>
             <div className="flex-1 text-center">
@@ -190,28 +237,77 @@ export default function OrdersPage() {
               </button>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {menuList.map(m => {
-              const inCart = cart.find(c => c.menu.id === m.id)
-              return (
-                <button key={m.id} onClick={() => addToCart(m)}
-                  className={`rounded-2xl p-4 text-left transition-all active:scale-95 relative ${
-                    inCart ? 'bg-amber-900 border-2 border-amber-500' : 'bg-gray-800 border-2 border-gray-700'
-                  }`}>
-                  <div className="font-bold text-base mb-1">{m.name}</div>
-                  <div className="text-xs text-gray-400">{m.cookTime}分</div>
-                  {inCart && (
-                    <div className="absolute top-2 right-2 bg-amber-500 text-black font-black text-sm w-7 h-7 rounded-full flex items-center justify-center">
-                      {inCart.qty}
+
+          {/* ジャンルタブ */}
+          <div className="flex overflow-x-auto gap-2 px-4 py-3 bg-gray-900 border-b border-gray-800 no-scrollbar">
+            {EQUIP_TABS.map(tab => (
+              <button key={tab.key} onClick={() => setActiveEquip(tab.key)}
+                className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95 ${
+                  activeEquip === tab.key ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'
+                }`}>
+                {tab.label}
+                {tab.key === 'popular' && <span className="ml-1 text-xs">🔥</span>}
+              </button>
+            ))}
+          </div>
+
+          <div className="p-4">
+            {/* カート内容 */}
+            {cart.length > 0 && (
+              <div className="bg-gray-900 rounded-2xl p-3 mb-4 border border-amber-800">
+                <div className="text-xs text-amber-400 font-bold mb-2">カート ({totalCartItems}品)</div>
+                <div className="flex flex-wrap gap-2">
+                  {cart.map(c => (
+                    <div key={c.menu.id} className="flex items-center gap-1 bg-amber-900 border border-amber-600 px-2 py-1 rounded-lg">
+                      <span className="text-xs font-bold text-white">{c.menu.name}</span>
+                      <span className="text-xs text-amber-300 font-black">×{c.qty}</span>
+                      <button onClick={() => removeFromCart(c.menu.id)}
+                        className="text-gray-400 text-xs ml-1 font-black active:scale-95">✕</button>
                     </div>
-                  )}
-                </button>
-              )
-            })}
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              {filteredMenu().map(m => {
+                const inCart = cart.find(c => c.menu.id === m.id)
+                const count = orderCount[m.id] || 0
+                return (
+                  <button key={m.id} onClick={() => addToCart(m)}
+                    className={`rounded-2xl p-4 text-left transition-all active:scale-95 relative ${
+                      inCart ? 'bg-amber-900 border-2 border-amber-500' : 'bg-gray-800 border-2 border-gray-700'
+                    }`}>
+                    {count > 0 && (
+                      <div className="absolute top-2 left-2 bg-gray-700 text-gray-300 text-xs px-1.5 py-0.5 rounded-full font-bold">
+                        {count}回
+                      </div>
+                    )}
+                    <div className="font-bold text-base mb-1 mt-4">{m.name}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-gray-400">{m.cookTime}分</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                        m.equip === 'cold' ? 'bg-blue-900 text-blue-300' :
+                        m.equip === 'straw' ? 'bg-yellow-900 text-yellow-300' :
+                        m.equip === 'stove' ? 'bg-orange-900 text-orange-300' :
+                        m.equip === 'fryer' ? 'bg-red-900 text-red-300' :
+                        'bg-purple-900 text-purple-300'
+                      }`}>{EQUIP_LABEL[m.equip]}</span>
+                    </div>
+                    {inCart && (
+                      <div className="absolute top-2 right-2 bg-amber-500 text-black font-black text-sm w-7 h-7 rounded-full flex items-center justify-center">
+                        {inCart.qty}
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
       )}
 
+      {/* STEP 3: 確認 */}
       {step === 'confirm' && selTable !== null && (
         <div className="p-4">
           <div className="flex items-center gap-3 mb-4">
@@ -227,7 +323,7 @@ export default function OrdersPage() {
               <div key={c.menu.id} className="flex items-center gap-3 py-3 border-b border-gray-800 last:border-0">
                 <div className="flex-1">
                   <div className="font-bold text-base">{c.menu.name}</div>
-                  <div className="text-xs text-gray-400">{c.menu.cookTime}分</div>
+                  <div className="text-xs text-gray-400">{c.menu.cookTime}分 · {EQUIP_LABEL[c.menu.equip]}</div>
                 </div>
                 <div className="flex items-center gap-3">
                   <button onClick={() => removeFromCart(c.menu.id)}
