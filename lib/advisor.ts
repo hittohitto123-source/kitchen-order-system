@@ -1,4 +1,5 @@
 import type { OrderItem, ShopSettings } from './types'
+import { buildSchedule } from './priorityEngine'
 
 export interface Advice {
   level: 'urgent' | 'action' | 'parallel' | 'warning' | 'next'
@@ -16,12 +17,12 @@ export function generateAdvice(
   settings: ShopSettings,
   now: number
 ): Advice[] {
-  const pending = orders.filter(o => o.status === 'pending')
-  const cooking = orders.filter(o => o.status === 'cooking')
   const advices: Advice[] = []
 
-  // 設備使用中か
-  const cookingEquips = new Set(cooking.map(o => o.menu.equip))
+  // priorityEngineの結果をそのまま使う
+  const scheduled = buildSchedule(orders, settings, now)
+  const cooking = orders.filter(o => o.status === 'cooking')
+
   const equipCapacity: Record<string, number> = {
     cold: 99,
     stove: settings.stoveSlots || 4,
@@ -32,164 +33,137 @@ export function generateAdvice(
   const equipUsage: Record<string, number> = {}
   cooking.forEach(o => { equipUsage[o.menu.equip] = (equipUsage[o.menu.equip] || 0) + 1 })
 
+  if (scheduled.length === 0 && cooking.length === 0) {
+    advices.push({ level: 'next', icon: '✅', text: '全ての注文が完了しています。お疲れ様でした！' })
+    return advices
+  }
+
+  if (scheduled.length === 0 && cooking.length > 0) {
+    advices.push({ level: 'next', icon: '🍳', text: '調理中の料理を仕上げてください。待機中の注文はありません。' })
+  }
+
   // ━━━━━━━━━━━━━━━━━━━━━━
-  // レベル1：遅延卓の緊急警告
+  // レベル1：遅延緊急警告（priorityEngineの順番通り）
   // ━━━━━━━━━━━━━━━━━━━━━━
-  const dangerOrders = pending.filter(o =>
+  const dangerItems = scheduled.filter(o =>
     (now - o.addedAt) / 1000 >= settings.dangerThresholdSec
   )
-  if (dangerOrders.length > 0) {
-    const tables = [...new Set(dangerOrders.map(o => o.table))].join('・')
-    const items = dangerOrders.map(o => `${o.table}卓${o.menu.name}`).join('、')
+  if (dangerItems.length > 0) {
+    const items = dangerItems.slice(0, 3).map(o => `${o.table}卓${o.menu.name}`).join('、')
     advices.push({
       level: 'urgent',
       icon: '🚨',
-      text: `緊急！${tables}卓が遅延しています。${items}を最優先で調理してください。`
+      text: `緊急！${items}が遅延しています。今すぐ調理してください。`
     })
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━━
-  // レベル2：今すぐ出せる冷菜
+  // レベル2：優先順位1位の指示（priorityEngineの1番目）
   // ━━━━━━━━━━━━━━━━━━━━━━
-  const coldPending = pending.filter(o => o.menu.equip === 'cold')
-  if (coldPending.length > 0) {
-    const items = coldPending.map(o => `${o.table}卓${o.menu.name}`).join('、')
-    advices.push({
-      level: 'urgent',
-      icon: '🧊',
-      text: `今すぐ出せます：${items}`
-    })
-  }
+  const top = scheduled.find(o => !o.equipBlocked)
+  if (top) {
+    const usage = equipUsage[top.menu.equip] || 0
+    const cap = equipCapacity[top.menu.equip] || 0
+    const isEquipFree = cap === 0 || usage < cap
 
-  // ━━━━━━━━━━━━━━━━━━━━━━
-  // レベル3：まとめて調理できる同一メニュー
-  // ━━━━━━━━━━━━━━━━━━━━━━
-  const menuGroups: Record<string, OrderItem[]> = {}
-  pending
-    .filter(o => o.menu.equip !== 'cold')
-    .forEach(o => {
-      if (!menuGroups[o.menu.id]) menuGroups[o.menu.id] = []
-      menuGroups[o.menu.id].push(o)
-    })
-
-  Object.values(menuGroups)
-    .filter(g => g.length >= 2)
-    .sort((a, b) => b.length - a.length)
-    .forEach(group => {
-      const equip = group[0].menu.equip
-      const usage = equipUsage[equip] || 0
-      const cap = equipCapacity[equip] || 0
-      const available = Math.max(0, cap - usage)
-      const canStart = Math.min(available, group.length)
-      const tables = group.map(o => `${o.table}卓`).join('・')
-
-      if (canStart >= 2) {
+    if (top.menu.equip === 'cold') {
+      // 冷菜グループをまとめて指示
+      const coldItems = scheduled
+        .filter(o => o.menu.equip === 'cold')
+        .map(o => `${o.table}卓${o.menu.name}`)
+        .join('、')
+      advices.push({
+        level: 'urgent',
+        icon: '🧊',
+        text: `今すぐ出せます：${coldItems}`
+      })
+    } else if (top.isBatchLeader && top.batchCount >= 2) {
+      // まとめ調理の指示
+      const batchItems = scheduled
+        .filter(o => o.menu.id === top.menu.id)
+        .map(o => `${o.table}卓`)
+        .join('・')
+      if (isEquipFree) {
         advices.push({
           level: 'action',
           icon: '🔥',
-          text: `まとめて調理：${group[0].menu.name}が${group.length}件。${tables}をまとめて${EQUIP_LABEL[equip]}で開始してください。`
+          text: `まとめて調理：${top.menu.name}が${top.batchCount}件。${batchItems}を${EQUIP_LABEL[top.menu.equip]}でまとめて開始してください。`
         })
-      } else if (canStart === 1) {
-        advices.push({
-          level: 'action',
-          icon: '▶️',
-          text: `${group[0].menu.name}（${tables}）：${EQUIP_LABEL[equip]}が空き次第まとめて調理できます。`
-        })
-      }
-    })
-
-  // ━━━━━━━━━━━━━━━━━━━━━━
-  // レベル4：空き設備への投入指示
-  // ━━━━━━━━━━━━━━━━━━━━━━
-  const equips = ['straw', 'fryer', 'grill', 'stove']
-  equips.forEach(equip => {
-    const cap = equipCapacity[equip] || 0
-    if (cap === 0) return
-    const usage = equipUsage[equip] || 0
-    const available = cap - usage
-    if (available <= 0) return
-
-    const waitingForEquip = pending
-      .filter(o => o.menu.equip === equip)
-      .sort((a, b) => a.addedAt - b.addedAt)
-
-    if (waitingForEquip.length === 0) return
-
-    const toStart = waitingForEquip.slice(0, available)
-    const items = toStart.map(o => `${o.table}卓${o.menu.name}`).join('、')
-
-    // まとめ調理でもう追加されていればスキップ
-    const alreadyAdvised = advices.some(a =>
-      toStart.some(o => a.text.includes(o.menu.name) && a.text.includes(`${o.table}卓`))
-    )
-    if (!alreadyAdvised) {
-      advices.push({
-        level: 'action',
-        icon: equip === 'fryer' ? '🍳' : equip === 'straw' ? '🔥' : equip === 'grill' ? '♨️' : '🥘',
-        text: `${EQUIP_LABEL[equip]}空き${available}枠：${items}を今すぐ開始してください。`
-      })
-    }
-  })
-
-  // ━━━━━━━━━━━━━━━━━━━━━━
-  // レベル5：並行作業の指示
-  // ━━━━━━━━━━━━━━━━━━━━━━
-  if (cooking.length > 0 && coldPending.length === 0) {
-    // 調理中の料理がある状態で、並行して他の設備で調理できるものがあるか
-    const cookingAttnHigh = cooking.some(o => o.menu.attn >= 3)
-    const parallelPending = pending.filter(o => {
-      const equip = o.menu.equip
-      if (equip === 'cold') return false
-      const usage = equipUsage[equip] || 0
-      const cap = equipCapacity[equip] || 0
-      return cap > 0 && usage < cap && !cookingEquips.has(equip)
-    })
-
-    if (parallelPending.length > 0 && !cookingAttnHigh) {
-      const item = parallelPending[0]
-      const cookingItems = cooking.map(o => `${o.table}卓${o.menu.name}`).join('、')
-      advices.push({
-        level: 'parallel',
-        icon: '⚡',
-        text: `並行作業可：${cookingItems}の調理中に、${item.table}卓${item.menu.name}を${EQUIP_LABEL[item.menu.equip]}で同時開始できます。`
-      })
-    }
-
-    if (cookingAttnHigh) {
-      const attnItems = cooking.filter(o => o.menu.attn >= 3)
-      const attnItem = attnItems[0]
-      const cookTime = attnItem.menu.cookTime
-      const elapsed = attnItem.startedAt
-        ? Math.floor((now - attnItem.startedAt) / 1000)
-        : 0
-      const remaining = Math.max(0, cookTime * 60 - elapsed)
-      if (remaining > 0) {
+      } else {
         advices.push({
           level: 'warning',
-          icon: '👀',
-          text: `${attnItem.table}卓${attnItem.menu.name}は目を離せません。残り約${Math.ceil(remaining / 60)}分。他の作業は完了後に。`
+          icon: '⏳',
+          text: `${top.menu.name}（${batchItems}）：${EQUIP_LABEL[top.menu.equip]}が空き次第まとめて調理してください。`
+        })
+      }
+    } else {
+      // 通常の1位指示
+      if (isEquipFree && !top.equipBlocked) {
+        const icon = top.menu.equip === 'fryer' ? '🍳' :
+                     top.menu.equip === 'straw' ? '🔥' :
+                     top.menu.equip === 'grill' ? '♨️' : '🥘'
+        advices.push({
+          level: 'action',
+          icon,
+          text: `最優先：${top.table}卓${top.menu.name}を${EQUIP_LABEL[top.menu.equip]}で今すぐ開始してください（${top.menu.cookTime}分）。`
         })
       }
     }
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━━
-  // レベル6：調理完了間近の次の準備指示
+  // レベル3：並行作業の指示（priorityEngineの順番に従う）
+  // ━━━━━━━━━━━━━━━━━━━━━━
+  if (cooking.length > 0) {
+    const cookingAttnHigh = cooking.some(o => o.menu.attn >= 3)
+
+    if (cookingAttnHigh) {
+      const attnItem = cooking.find(o => o.menu.attn >= 3)!
+      const elapsed = attnItem.startedAt ? Math.floor((now - attnItem.startedAt) / 1000) : 0
+      const remaining = Math.max(0, attnItem.menu.cookTime * 60 - elapsed)
+      advices.push({
+        level: 'warning',
+        icon: '👀',
+        text: `${attnItem.table}卓${attnItem.menu.name}は目を離せません。残り約${Math.ceil(remaining / 60)}分。完了後に次の作業へ。`
+      })
+    } else {
+      // 空き設備で並行できるものを優先順位順に探す
+      const parallelCandidate = scheduled.find(o => {
+        if (o.menu.equip === 'cold') return false
+        const usage = equipUsage[o.menu.equip] || 0
+        const cap = equipCapacity[o.menu.equip] || 0
+        const cookingEquips = new Set(cooking.map(c => c.menu.equip))
+        return cap > 0 && usage < cap && !cookingEquips.has(o.menu.equip)
+      })
+
+      if (parallelCandidate) {
+        const cookingDesc = cooking.slice(0, 2).map(o => `${o.table}卓${o.menu.name}`).join('、')
+        advices.push({
+          level: 'parallel',
+          icon: '⚡',
+          text: `並行作業可：${cookingDesc}の調理中に、${parallelCandidate.table}卓${parallelCandidate.menu.name}を${EQUIP_LABEL[parallelCandidate.menu.equip]}で同時開始できます。`
+        })
+      }
+    }
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━
+  // レベル4：調理完了間近の次の準備（priorityEngineの次の候補）
   // ━━━━━━━━━━━━━━━━━━━━━━
   cooking.forEach(o => {
     if (!o.startedAt) return
     const elapsed = (now - o.startedAt) / 1000
     const remaining = o.menu.cookTime * 60 - elapsed
     if (remaining > 0 && remaining <= 60) {
-      // 完了間近 → 次に何を開始するか
-      const nextForEquip = pending
-        .filter(p => p.menu.equip === o.menu.equip)
-        .sort((a, b) => a.addedAt - b.addedAt)[0]
-      if (nextForEquip) {
+      // 次にやるべき料理をpriority順で探す
+      const nextItem = scheduled.find(p =>
+        p.menu.equip === o.menu.equip && !p.equipBlocked
+      )
+      if (nextItem) {
         advices.push({
           level: 'next',
           icon: '⏱',
-          text: `まもなく完了：${o.table}卓${o.menu.name}があと約${Math.ceil(remaining)}秒で完了。提供後すぐに${nextForEquip.table}卓${nextForEquip.menu.name}を開始してください。`
+          text: `まもなく完了：${o.table}卓${o.menu.name}があと約${Math.ceil(remaining)}秒。提供後すぐに${nextItem.table}卓${nextItem.menu.name}を開始してください。`
         })
       } else {
         advices.push({
@@ -202,41 +176,27 @@ export function generateAdvice(
   })
 
   // ━━━━━━━━━━━━━━━━━━━━━━
-  // レベル7：警告時間超過の卓
+  // レベル5：次の2番目・3番目の指示
   // ━━━━━━━━━━━━━━━━━━━━━━
-  const warnOrders = pending.filter(o =>
-    (now - o.addedAt) / 1000 >= settings.warningThresholdSec &&
-    (now - o.addedAt) / 1000 < settings.dangerThresholdSec
+  const notYetAdvised = scheduled.filter(o =>
+    !o.equipBlocked &&
+    !advices.some(a => a.text.includes(`${o.table}卓${o.menu.name}`))
   )
-  if (warnOrders.length > 0) {
-    const tables = [...new Set(warnOrders.map(o => o.table))].join('・')
-    advices.push({
-      level: 'warning',
-      icon: '⚠️',
-      text: `${tables}卓の待ち時間が長くなっています。優先して調理してください。`
-    })
+
+  if (notYetAdvised.length > 0 && advices.length < 4) {
+    const next = notYetAdvised[0]
+    const usage = equipUsage[next.menu.equip] || 0
+    const cap = equipCapacity[next.menu.equip] || 0
+    if (cap === 0 || usage < cap) {
+      advices.push({
+        level: 'next',
+        icon: '▶️',
+        text: `次の準備：${next.table}卓${next.menu.name}（${EQUIP_LABEL[next.menu.equip]}・${next.menu.cookTime}分）を準備してください。`
+      })
+    }
   }
 
-  // ━━━━━━━━━━━━━━━━━━━━━━
-  // 何もない場合
-  // ━━━━━━━━━━━━━━━━━━━━━━
-  if (advices.length === 0 && pending.length === 0 && cooking.length === 0) {
-    advices.push({
-      level: 'next',
-      icon: '✅',
-      text: '全ての注文が完了しています。お疲れ様でした！'
-    })
-  }
-
-  if (advices.length === 0 && cooking.length > 0 && pending.length === 0) {
-    advices.push({
-      level: 'next',
-      icon: '🍳',
-      text: `調理中の料理を仕上げてください。待機中の注文はありません。`
-    })
-  }
-
-  // 重複削除・最大5件まで
+  // 重複削除・最大5件
   const unique = advices.filter((a, i, arr) =>
     arr.findIndex(b => b.text === a.text) === i
   )
