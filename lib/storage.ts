@@ -55,7 +55,13 @@ export function loadSettings(): ShopSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS
   try {
     const s = localStorage.getItem('kitchen_settings')
-    return s ? { ...DEFAULT_SETTINGS, ...JSON.parse(s) } : DEFAULT_SETTINGS
+    if (!s) return DEFAULT_SETTINGS
+    const parsed = JSON.parse(s)
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      tableConfigs: parsed.tableConfigs || DEFAULT_SETTINGS.tableConfigs,
+    }
   } catch { return DEFAULT_SETTINGS }
 }
 
@@ -88,7 +94,7 @@ export async function loadOrdersFromDB(): Promise<OrderItem[]> {
     if (!data || data.length === 0) return []
     return data.map(row => ({
       id: row.id,
-      table: row.table_number,
+      table: row.table_name || String(row.table_number),
       menu: row.menu_data,
       status: row.status,
       addedAt: Number(row.added_at),
@@ -104,7 +110,8 @@ export function saveOrders(orders: OrderItem[]): void {
   const rows = orders.map(o => ({
     id: o.id,
     tenant_id: TENANT_ID,
-    table_number: o.table,
+    table_number: 0,
+    table_name: o.table,
     menu_data: o.menu,
     status: o.status,
     added_at: Number(o.addedAt),
@@ -189,7 +196,8 @@ export async function logAnalytics(order: OrderItem): Promise<void> {
     menu_id: order.menu.id,
     menu_name: order.menu.name,
     menu_equip: order.menu.equip,
-    table_number: order.table,
+    table_number: 0,
+    table_name: order.table,
     cook_time_actual: cookTimeActual,
   })
 }

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import type { OrderItem, MenuItem, ShopSettings } from '../../lib/types'
+import type { OrderItem, MenuItem, ShopSettings, TableConfig } from '../../lib/types'
 import { loadOrders, saveOrders, loadSettings, saveSettings, loadNextId, saveNextId, clearAllOrders, loadOrdersFromDB, loadMenuFromDB, logAnalytics } from '../../lib/storage'
 import { buildSchedule } from '../../lib/priorityEngine'
 import { generateAdvice } from '../../lib/advisor'
@@ -80,7 +80,7 @@ export default function KitchenPage() {
   const [menuList, setMenuList] = useState<MenuItem[]>([])
   const [settings, setSettings] = useState<ShopSettings | null>(null)
   const [now, setNow] = useState(Date.now())
-  const [selTable, setSelTable] = useState('1')
+  const [selTable, setSelTable] = useState('')
   const [selMenu, setSelMenu] = useState('')
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [dbSynced, setDbSynced] = useState(false)
@@ -90,7 +90,8 @@ export default function KitchenPage() {
   const [orderCount, setOrderCount] = useState<Record<string, number>>({})
   const [showAdvice, setShowAdvice] = useState(false)
   const [layout, setLayout] = useState({ cols: 2, isLandscape: false })
-  const alertedTables = useRef<Set<number>>(new Set())
+  const [selectedSeats, setSelectedSeats] = useState<string[]>([])
+  const alertedTables = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     function updateLayout() { setLayout(getLayout(window.innerWidth, window.innerHeight)) }
@@ -104,7 +105,12 @@ export default function KitchenPage() {
   }, [])
 
   useEffect(() => {
-    setSettings(loadSettings())
+    const s = loadSettings()
+    setSettings(s)
+    const firstTable = s.tableConfigs?.[0]?.name || 'C1'
+    setSelTable(firstTable)
+    setSelectedSeats([firstTable])
+
     Promise.all([loadMenuFromDB(), loadOrdersFromDB()]).then(([menuData, dbOrders]) => {
       const activeMenu = menuData.filter(m => m.active)
       setMenuList(activeMenu)
@@ -134,12 +140,15 @@ export default function KitchenPage() {
       setOrderCount(count)
       const currentSettings = loadSettings()
       if (currentSettings.soundAlert) {
-        const dangerTables = currentOrders
-          .filter(o => o.status === 'pending' && (newNow - o.addedAt) / 1000 >= currentSettings.dangerThresholdSec)
-          .map(o => o.table)
-        const newDanger = dangerTables.filter(t => !alertedTables.current.has(t))
-        if (newDanger.length > 0) { playAlertSound(); newDanger.forEach(t => alertedTables.current.add(t)) }
-        if (dangerTables.length === 0) alertedTables.current.clear()
+        const dangerTableSet = new Set(
+          currentOrders
+            .filter(o => o.status === 'pending' && (newNow - o.addedAt) / 1000 >= currentSettings.dangerThresholdSec)
+            .map(o => o.table)
+        )
+        dangerTableSet.forEach(t => {
+          if (!alertedTables.current.has(t)) { playAlertSound(); alertedTables.current.add(t) }
+        })
+        if (dangerTableSet.size === 0) alertedTables.current.clear()
       }
       dbPollCount++
       if (dbPollCount >= 10) {
@@ -207,11 +216,24 @@ export default function KitchenPage() {
 
   const addOrder = (menuId?: string) => {
     const menu = menuList.find(m => m.id === (menuId || selMenu))
-    if (!menu || !settings) return
+    if (!menu || !settings || !selTable) return
     const id = loadNextId()
-    commit([...orders, { id, table: Number(selTable), menu, status: 'pending', addedAt: Date.now() }])
+    commit([...orders, { id, table: selTable, menu, status: 'pending', addedAt: Date.now() }])
     saveNextId(id + 1)
     setOrderCount(prev => ({ ...prev, [menu.id]: (prev[menu.id] || 0) + 1 }))
+  }
+
+  const toggleSeat = (name: string, type: 'counter' | 'table') => {
+    if (type === 'table') {
+      setSelectedSeats([name])
+      setSelTable(name)
+    } else {
+      const next = selectedSeats.includes(name)
+        ? selectedSeats.filter(s => s !== name)
+        : [...selectedSeats, name]
+      setSelectedSeats(next)
+      setSelTable(next.join('・'))
+    }
   }
 
   const toggleOneOp = () => {
@@ -250,10 +272,9 @@ export default function KitchenPage() {
   const cooking = orders.filter(o => o.status === 'cooking')
   const pending = orders.filter(o => o.status === 'pending')
   const served = orders.filter(o => o.status === 'served')
-  const dangerTables = new Set(
+  const dangerTableSet = new Set(
     orders.filter(o => o.status === 'pending' && (now - o.addedAt) / 1000 >= settings.dangerThresholdSec).map(o => o.table)
   )
-  const tables = Array.from({ length: settings.tableCount }, (_, i) => i + 1)
   const advices = generateAdvice(orders, settings, now)
   const hasUrgent = advices.some(a => a.level === 'urgent')
 
@@ -266,13 +287,17 @@ export default function KitchenPage() {
     straw: settings.hasStraw ? 2 : 0,
   }
 
-  const getWaitSec = (table: number) => {
-    const items = orders.filter(o => o.table === table && o.status !== 'served')
+  const tableConfigs = settings.tableConfigs || []
+  const counterConfigs = tableConfigs.filter((c: TableConfig) => c.type === 'counter')
+  const tableConfigsOnly = tableConfigs.filter((c: TableConfig) => c.type === 'table')
+
+  const getWaitSec = (tableName: string) => {
+    const items = orders.filter(o => o.table === tableName && o.status !== 'served')
     if (!items.length) return null
     return Math.floor((now - Math.min(...items.map(o => o.addedAt))) / 1000)
   }
 
-  // ━━━ 調理中をメニューごとにグループ化 ━━━
+  // 調理中グループ化
   const cookingGroups: { menuId: string; menuName: string; equip: string; orders: OrderItem[] }[] = []
   const cookingRendered = new Set<number>()
   cooking.forEach(o => {
@@ -282,7 +307,6 @@ export default function KitchenPage() {
     cookingGroups.push({ menuId: o.menu.id, menuName: o.menu.name, equip: o.menu.equip, orders: sameMenu })
   })
 
-  // ━━━ 待機カードのレンダリング ━━━
   const renderCards = () => {
     const rendered = new Set<number>()
     const elements: React.ReactNode[] = []
@@ -298,10 +322,9 @@ export default function KitchenPage() {
       const g = GENRE[o.menu.equip] || GENRE.stove
 
       if (o.batchCount > 1 && o.isBatchLeader) {
-        // ━━ まとめグループ → 1枚のカードにまとめる ━━
         const group = scheduled.filter(s => s.menu.id === o.menu.id)
         group.forEach(s => rendered.add(s.id))
-        const tables = group.map(go => `${go.table}卓`).join('・')
+        const tableStr = group.map(go => go.table).join('・')
         const maxWait = Math.max(...group.map(go => Math.floor((now - go.addedAt) / 1000)))
         const groupDanger = maxWait >= settings.dangerThresholdSec
         const groupWarn = maxWait >= settings.warningThresholdSec
@@ -313,25 +336,21 @@ export default function KitchenPage() {
             padding: '7px 9px',
             backgroundColor: groupDanger ? 'rgba(127,29,29,0.7)' : groupWarn ? 'rgba(120,53,15,0.7)' : 'rgba(34,197,94,0.07)',
           }}>
-            {/* ジャンル + まとめバッジ + 順位 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
               <span style={{ backgroundColor: `${g.border}33`, color: g.text, fontSize: '10px', fontWeight: 'bold', padding: '1px 5px', borderRadius: '4px', border: `1px solid ${g.border}66`, flexShrink: 0 }}>{g.label}</span>
               <span style={{ fontSize: '10px', color: '#6b7280', flexShrink: 0 }}>{rank}</span>
               <span style={{ fontSize: '15px', fontWeight: '900', color: 'white', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.menu.name}</span>
-              <span style={{ backgroundColor: 'rgba(34,197,94,0.2)', border: '1px solid #22c55e', color: '#4ade80', fontSize: '10px', fontWeight: '900', padding: '1px 6px', borderRadius: '20px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+              <span style={{ backgroundColor: 'rgba(34,197,94,0.2)', border: '1px solid #22c55e', color: '#4ade80', fontSize: '10px', fontWeight: '900', padding: '1px 6px', borderRadius: '20px', flexShrink: 0 }}>
                 ★{group.length}件
               </span>
             </div>
-            {/* 卓番一覧 */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontSize: '22px', fontWeight: '900', color: groupDanger ? '#fca5a5' : groupWarn ? '#fcd34d' : '#4ade80', lineHeight: 1 }}>{tables}</div>
+                <div style={{ fontSize: '20px', fontWeight: '900', color: groupDanger ? '#fca5a5' : groupWarn ? '#fcd34d' : '#4ade80', lineHeight: 1 }}>{tableStr}</div>
                 {maxWait > 30 && <span style={{ fontSize: '10px', color: groupDanger ? '#ef4444' : groupWarn ? '#f59e0b' : '#6b7280' }}>{formatWait(maxWait)}</span>}
                 {groupDanger && <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 'bold', marginLeft: '4px' }}>遅延!</span>}
               </div>
-              <button
-                onClick={() => handleStartPress(o)}
-                disabled={!!isBlocked}
+              <button onClick={() => handleStartPress(o)} disabled={!!isBlocked}
                 style={{ backgroundColor: isBlocked ? '#374151' : '#2563eb', color: isBlocked ? '#6b7280' : 'white', width: '40px', height: '34px', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', border: 'none', cursor: isBlocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 {isBlocked ? '×' : '▶'}
               </button>
@@ -355,14 +374,12 @@ export default function KitchenPage() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <span style={{ fontSize: '26px', fontWeight: '900', color: isDanger ? '#fca5a5' : isWarn ? '#fcd34d' : '#FFD700', lineHeight: 1 }}>{o.table}卓</span>
+                <span style={{ fontSize: '22px', fontWeight: '900', color: isDanger ? '#fca5a5' : isWarn ? '#fcd34d' : '#FFD700', lineHeight: 1 }}>{o.table}</span>
                 {waitSec > 30 && <span style={{ fontSize: '10px', color: isDanger ? '#ef4444' : isWarn ? '#f59e0b' : '#6b7280', marginLeft: '6px' }}>{formatWait(waitSec)}</span>}
                 {isDanger && !isBlocked && <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 'bold', marginLeft: '4px' }}>遅延!</span>}
                 {isBlocked && <span style={{ fontSize: '10px', color: '#6b7280', marginLeft: '4px' }}>満杯</span>}
               </div>
-              <button
-                onClick={() => handleStartPress(o)}
-                disabled={!!isBlocked}
+              <button onClick={() => handleStartPress(o)} disabled={!!isBlocked}
                 style={{ backgroundColor: isBlocked ? '#374151' : '#2563eb', color: isBlocked ? '#6b7280' : 'white', width: '36px', height: '32px', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', border: 'none', cursor: isBlocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 {isBlocked ? '×' : '▶'}
               </button>
@@ -398,20 +415,20 @@ export default function KitchenPage() {
             <div className="bg-gray-800 rounded-2xl p-3 mb-4">
               {[batchModal.order, ...batchModal.sameMenuOrders].map(o => (
                 <div key={o.id} className="flex items-center justify-between py-2 border-b border-gray-700 last:border-0">
-                  <span className="text-amber-400 font-black">{o.table}卓</span>
+                  <span className="text-amber-400 font-black">{o.table}</span>
                   <span className="text-xs text-gray-400">待機{formatWaitJP(Math.floor((now - o.addedAt) / 1000))}</span>
                 </div>
               ))}
             </div>
             <div className="flex flex-col gap-2 mb-3">
               <button onClick={() => startCooking([batchModal.order.id])} className="w-full bg-gray-700 text-white font-bold py-3 rounded-2xl text-sm active:scale-95">
-                {batchModal.order.table}卓だけ開始（1件）
+                {batchModal.order.table}だけ開始（1件）
               </button>
               {batchModal.sameMenuOrders.map((_, idx) => {
                 const sel = [batchModal.order, ...batchModal.sameMenuOrders.slice(0, idx + 1)]
                 return (
                   <button key={idx} onClick={() => startCooking(sel.map(o => o.id))} className="w-full bg-blue-700 text-white font-bold py-3 rounded-2xl text-sm active:scale-95">
-                    {sel.map(o => `${o.table}卓`).join('+')} まとめて（{sel.length}件）
+                    {sel.map(o => o.table).join('+')} まとめて（{sel.length}件）
                   </button>
                 )
               })}
@@ -434,7 +451,7 @@ export default function KitchenPage() {
               <span><span className="text-amber-400 font-black">{pending.length}</span>待機</span>
               <span><span className="text-blue-400 font-black">{cooking.length}</span>調理</span>
               <span><span className="text-green-400 font-black">{served.length}</span>提供</span>
-              <span><span className="text-red-400 font-black">{dangerTables.size}</span>遅延</span>
+              <span><span className="text-red-400 font-black">{dangerTableSet.size}</span>遅延</span>
             </div>
             <div className="flex gap-1.5">
               {Object.entries(equipCapacity).filter(([, cap]) => cap > 0).map(([equip, cap]) => {
@@ -501,8 +518,6 @@ export default function KitchenPage() {
       {/* 優先順位タブ */}
       {activeTab === 'priority' && (
         <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 105px)' }}>
-
-          {/* 左：待機中 */}
           <div className="overflow-y-auto flex-1" style={{ borderRight: '1px solid #1f2937' }}>
             <div className="bg-gray-900 px-3 py-1 border-b border-gray-800 sticky top-0 z-10">
               <span className="text-xs font-black text-amber-400">次にやること（{scheduled.length}件）</span>
@@ -518,7 +533,6 @@ export default function KitchenPage() {
             </div>
           </div>
 
-          {/* 右：調理中（メニューごとにグループ化） */}
           <div className="overflow-y-auto" style={{ width: layout.isLandscape ? '20%' : '27%' }}>
             <div className="bg-gray-900 px-2 py-1 border-b border-gray-800 sticky top-0 z-10">
               <span className="text-xs font-black text-blue-400">調理中（{cookingGroups.length}種・{cooking.length}件）</span>
@@ -533,13 +547,11 @@ export default function KitchenPage() {
                 const g = GENRE[group.equip] || GENRE.stove
                 const minStarted = Math.min(...group.orders.map(o => o.startedAt || Date.now()))
                 const elapsed = Math.floor((now - minStarted) / 1000)
-                const cookTime = group.orders[0].menu.cookTime
-                const stdSec = cookTime * 60
+                const stdSec = group.orders[0].menu.cookTime * 60
                 const progress = Math.min((elapsed / stdSec) * 100, 100)
                 const isOver = elapsed > stdSec
-                const tableStr = group.orders.map(o => `${o.table}卓`).join('・')
+                const tableStr = group.orders.map(o => o.table).join('・')
                 const isMulti = group.orders.length > 1
-
                 return (
                   <div key={group.menuId} style={{
                     borderTop: `4px solid ${g.border}`,
@@ -551,7 +563,6 @@ export default function KitchenPage() {
                     borderTopWidth: '4px',
                     borderTopColor: g.border,
                   }}>
-                    {/* メニュー名 + まとめバッジ */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
                       <span style={{ color: '#60a5fa', fontSize: '11px' }}>▶</span>
                       <span style={{ fontSize: '12px', fontWeight: '900', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{group.menuName}</span>
@@ -561,21 +572,17 @@ export default function KitchenPage() {
                         </span>
                       )}
                     </div>
-                    {/* 卓番（まとめ表示） */}
-                    <div style={{ fontSize: isMulti ? '14px' : '20px', fontWeight: '900', color: '#4ade80', lineHeight: 1.1, marginBottom: '4px' }}>
+                    <div style={{ fontSize: isMulti ? '13px' : '20px', fontWeight: '900', color: '#4ade80', lineHeight: 1.2, marginBottom: '4px' }}>
                       {tableStr}
                     </div>
-                    {/* 進捗バー */}
                     <div style={{ width: '100%', height: '5px', backgroundColor: '#1f2937', borderRadius: '999px', overflow: 'hidden', marginBottom: '4px' }}>
                       <div style={{ height: '100%', width: `${progress}%`, backgroundColor: getProgressColor(progress, isOver), borderRadius: '999px', transition: 'width 1s' }} />
                     </div>
-                    {/* 経過時間 + 完了ボタン */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: '9px', color: isOver ? '#ef4444' : '#6b7280' }}>
                         {isOver ? '超過' : '経過'}{formatWait(elapsed)}
                       </span>
-                      <button
-                        onClick={() => setStatusBatch(group.orders.map(o => o.id), 'served')}
+                      <button onClick={() => setStatusBatch(group.orders.map(o => o.id), 'served')}
                         style={{ backgroundColor: '#16a34a', color: 'white', fontSize: '11px', fontWeight: 'bold', padding: '3px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}>
                         {isMulti ? `全${group.orders.length}完了` : '完了'}
                       </button>
@@ -591,55 +598,117 @@ export default function KitchenPage() {
       {/* 卓一覧タブ */}
       {activeTab === 'tables' && (
         <div className="p-3 pb-20 overflow-y-auto" style={{ height: 'calc(100vh - 105px)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(layout.cols + 1, 5)}, 1fr)`, gap: '8px' }}>
-            {tables.map(t => {
-              const ws = getWaitSec(t)
-              const items = orders.filter(o => o.table === t)
-              const isDanger = ws !== null && ws >= settings.dangerThresholdSec
-              const isWarn = ws !== null && ws >= settings.warningThresholdSec
-              const pendingCount = items.filter(o => o.status === 'pending').length
-              const cookingCount = items.filter(o => o.status === 'cooking').length
-              return (
-                <button key={t} onClick={() => { setSelTable(String(t)); setActiveTab('add') }}
-                  style={{
-                    borderRadius: '12px', padding: '10px', textAlign: 'left', cursor: 'pointer',
-                    border: `2px solid ${isDanger ? '#dc2626' : isWarn ? '#d97706' : items.length ? '#4b5563' : '#1f2937'}`,
-                    backgroundColor: isDanger ? 'rgba(127,29,29,0.5)' : isWarn ? 'rgba(120,53,15,0.5)' : items.length ? '#1f2937' : '#111',
-                    opacity: items.length ? 1 : 0.4,
-                  }}>
-                  <div style={{ fontSize: '11px', color: '#6b7280' }}>{t}卓</div>
-                  {ws !== null ? (
-                    <div style={{ fontSize: '20px', fontWeight: '900', color: isDanger ? '#fca5a5' : isWarn ? '#fcd34d' : '#4ade80' }}>{formatWaitJP(ws)}</div>
-                  ) : (
-                    <div style={{ fontSize: '14px', fontWeight: '900', color: '#374151' }}>空き</div>
-                  )}
-                  {(pendingCount > 0 || cookingCount > 0) && (
-                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
-                      {cookingCount > 0 && <span style={{ fontSize: '9px', backgroundColor: '#1e3a5f', color: '#93c5fd', padding: '1px 5px', borderRadius: '4px' }}>{cookingCount}調</span>}
-                      {pendingCount > 0 && <span style={{ fontSize: '9px', backgroundColor: '#1f2937', color: '#9ca3af', padding: '1px 5px', borderRadius: '4px' }}>{pendingCount}待</span>}
-                    </div>
-                  )}
-                </button>
-              )
-            })}
-          </div>
+          {counterConfigs.length > 0 && (
+            <div className="mb-4">
+              <div className="text-xs font-bold text-blue-400 mb-2">カウンター席</div>
+              <div className="flex flex-wrap gap-2">
+                {counterConfigs.map((c: TableConfig) => {
+                  const ws = getWaitSec(c.name)
+                  const isDanger = ws !== null && ws >= settings.dangerThresholdSec
+                  const isWarn = ws !== null && ws >= settings.warningThresholdSec
+                  const hasOrder = orders.some(o => o.table === c.name && o.status !== 'served')
+                  return (
+                    <button key={c.id} onClick={() => { setSelectedSeats([c.name]); setSelTable(c.name); setActiveTab('add') }}
+                      style={{
+                        borderRadius: '12px', padding: '10px 14px', textAlign: 'center', cursor: 'pointer', minWidth: '60px',
+                        border: `2px solid ${isDanger ? '#dc2626' : isWarn ? '#d97706' : hasOrder ? '#3b82f6' : '#374151'}`,
+                        backgroundColor: isDanger ? 'rgba(127,29,29,0.5)' : isWarn ? 'rgba(120,53,15,0.5)' : hasOrder ? 'rgba(30,58,95,0.5)' : '#111',
+                      }}>
+                      <div style={{ fontSize: '16px', fontWeight: '900', color: 'white' }}>{c.name}</div>
+                      {ws !== null && <div style={{ fontSize: '10px', color: isDanger ? '#fca5a5' : isWarn ? '#fcd34d' : '#93c5fd' }}>{formatWaitJP(ws)}</div>}
+                      {!hasOrder && <div style={{ fontSize: '9px', color: '#4b5563' }}>空き</div>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {tableConfigsOnly.length > 0 && (
+            <div>
+              <div className="text-xs font-bold text-green-400 mb-2">テーブル席</div>
+              <div className="grid grid-cols-4 gap-3">
+                {tableConfigsOnly.map((c: TableConfig) => {
+                  const ws = getWaitSec(c.name)
+                  const isDanger = ws !== null && ws >= settings.dangerThresholdSec
+                  const isWarn = ws !== null && ws >= settings.warningThresholdSec
+                  const hasOrder = orders.some(o => o.table === c.name && o.status !== 'served')
+                  return (
+                    <button key={c.id} onClick={() => { setSelectedSeats([c.name]); setSelTable(c.name); setActiveTab('add') }}
+                      style={{
+                        borderRadius: '16px', padding: '16px 12px', textAlign: 'center', cursor: 'pointer',
+                        border: `2px solid ${isDanger ? '#dc2626' : isWarn ? '#d97706' : hasOrder ? '#22c55e' : '#374151'}`,
+                        backgroundColor: isDanger ? 'rgba(127,29,29,0.5)' : isWarn ? 'rgba(120,53,15,0.5)' : hasOrder ? 'rgba(5,46,22,0.5)' : '#111',
+                      }}>
+                      <div style={{ fontSize: '28px', fontWeight: '900', color: 'white' }}>{c.name}</div>
+                      {ws !== null ? (
+                        <div style={{ fontSize: '11px', color: isDanger ? '#fca5a5' : isWarn ? '#fcd34d' : '#4ade80' }}>{formatWaitJP(ws)}</div>
+                      ) : (
+                        <div style={{ fontSize: '10px', color: '#4b5563' }}>空き</div>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* 注文追加タブ */}
       {activeTab === 'add' && (
         <div className="pb-20 overflow-y-auto" style={{ height: 'calc(100vh - 105px)' }}>
-          <div className="bg-gray-900 px-4 py-2 border-b border-gray-800">
-            <div className="text-xs text-gray-400 mb-1.5">卓番号</div>
-            <div className="flex overflow-x-auto gap-2">
-              {tables.map(t => (
-                <button key={t} onClick={() => setSelTable(String(t))}
-                  className={`flex-shrink-0 w-11 h-11 rounded-xl font-black text-base active:scale-95 ${selTable === String(t) ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
-                  {t}
-                </button>
-              ))}
+          {/* カウンター席選択 */}
+          {counterConfigs.length > 0 && (
+            <div className="bg-gray-900 px-4 py-3 border-b border-gray-800">
+              <div className="text-xs text-blue-400 font-bold mb-2">カウンター席（複数選択可）</div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {counterConfigs.map((c: TableConfig) => {
+                  const isSelected = selectedSeats.includes(c.name)
+                  return (
+                    <button key={c.id} onClick={() => toggleSeat(c.name, 'counter')}
+                      className="rounded-xl font-black text-base active:scale-95"
+                      style={{
+                        width: '44px', height: '44px',
+                        backgroundColor: isSelected ? '#f59e0b' : '#1f2937',
+                        color: isSelected ? 'black' : '#d1d5db',
+                        border: isSelected ? '2px solid #f59e0b' : '2px solid #374151',
+                      }}>
+                      {c.name}
+                    </button>
+                  )
+                })}
+              </div>
+              {selectedSeats.length > 0 && (
+                <div className="text-sm font-black" style={{ color: '#f59e0b' }}>
+                  選択中：{selTable || selectedSeats.join('・')}
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
+          {/* テーブル席選択 */}
+          {tableConfigsOnly.length > 0 && (
+            <div className="bg-gray-900 px-4 py-3 border-b border-gray-800">
+              <div className="text-xs text-green-400 font-bold mb-2">テーブル席</div>
+              <div className="flex gap-2">
+                {tableConfigsOnly.map((c: TableConfig) => (
+                  <button key={c.id} onClick={() => toggleSeat(c.name, 'table')}
+                    className="rounded-xl font-black text-lg active:scale-95"
+                    style={{
+                      width: '48px', height: '48px',
+                      backgroundColor: selTable === c.name && !selectedSeats.some(s => counterConfigs.some((cc: TableConfig) => cc.name === s)) ? '#22c55e' : '#1f2937',
+                      color: selTable === c.name && !selectedSeats.some(s => counterConfigs.some((cc: TableConfig) => cc.name === s)) ? 'black' : '#d1d5db',
+                      border: selTable === c.name ? '2px solid #22c55e' : '2px solid #374151',
+                    }}>
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ジャンルタブ */}
           <div className="flex overflow-x-auto gap-2 px-4 py-2 bg-gray-900 border-b border-gray-800">
             {EQUIP_TABS.map(tab => (
               <button key={tab.key} onClick={() => setActiveEquip(tab.key)}
@@ -648,6 +717,8 @@ export default function KitchenPage() {
               </button>
             ))}
           </div>
+
+          {/* メニューグリッド */}
           <div style={{ padding: '8px', display: 'grid', gridTemplateColumns: `repeat(${layout.cols}, 1fr)`, gap: '8px' }}>
             {filteredMenu().map(m => {
               const count = orderCount[m.id] || 0
@@ -678,10 +749,12 @@ export default function KitchenPage() {
               )
             })}
           </div>
-          {orders.filter(o => o.table === Number(selTable)).length > 0 && (
+
+          {/* この席の現在の注文 */}
+          {selTable && orders.filter(o => o.table === selTable).length > 0 && (
             <div className="mx-3 mb-3 bg-gray-900 rounded-2xl p-3">
-              <div className="text-xs text-gray-400 mb-2">{selTable}卓の現在の注文</div>
-              {orders.filter(o => o.table === Number(selTable)).map(o => (
+              <div className="text-xs text-gray-400 mb-2">{selTable}の現在の注文</div>
+              {orders.filter(o => o.table === selTable).map(o => (
                 <div key={o.id} className="flex items-center gap-2 py-2 border-b border-gray-800 last:border-0">
                   <div className={`w-2 h-2 rounded-full flex-shrink-0 ${o.status === 'pending' ? 'bg-amber-400' : o.status === 'cooking' ? 'bg-blue-400' : 'bg-green-400'}`} />
                   <div className="flex-1 font-bold text-sm">{o.menu.name}</div>

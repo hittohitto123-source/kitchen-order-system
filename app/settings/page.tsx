@@ -2,216 +2,296 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import type { ShopSettings } from '../../lib/types'
+import type { ShopSettings, TableConfig } from '../../lib/types'
+import { DEFAULT_TABLE_CONFIGS } from '../../lib/types'
 import { loadSettings, saveSettings } from '../../lib/storage'
 
 export default function SettingsPage() {
-  const [s, setS] = useState<ShopSettings | null>(null)
+  const [settings, setSettings] = useState<ShopSettings | null>(null)
   const [saved, setSaved] = useState(false)
 
-  useEffect(() => { setS(loadSettings()) }, [])
+  // テーブル設定の編集用
+  const [editingConfigs, setEditingConfigs] = useState<TableConfig[]>([])
+  const [newName, setNewName] = useState('')
+  const [newType, setNewType] = useState<'counter' | 'table'>('counter')
 
-  if (!s) return (
+  useEffect(() => {
+    const s = loadSettings()
+    setSettings(s)
+    setEditingConfigs(s.tableConfigs || DEFAULT_TABLE_CONFIGS)
+  }, [])
+
+  const update = (key: keyof ShopSettings, value: any) => {
+    if (!settings) return
+    setSettings({ ...settings, [key]: value })
+  }
+
+  const handleSave = () => {
+    if (!settings) return
+    const updated = { ...settings, tableConfigs: editingConfigs }
+    saveSettings(updated)
+    setSettings(updated)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const addTable = () => {
+    const name = newName.trim()
+    if (!name) return
+    const id = `${newType === 'counter' ? 'c' : 't'}${Date.now()}`
+    setEditingConfigs([...editingConfigs, { id, name, type: newType }])
+    setNewName('')
+  }
+
+  const removeTable = (id: string) => {
+    setEditingConfigs(editingConfigs.filter(c => c.id !== id))
+  }
+
+  const moveTable = (id: string, dir: 'up' | 'down') => {
+    const idx = editingConfigs.findIndex(c => c.id === id)
+    if (idx < 0) return
+    const newConfigs = [...editingConfigs]
+    const target = dir === 'up' ? idx - 1 : idx + 1
+    if (target < 0 || target >= newConfigs.length) return
+    const tmp = newConfigs[idx]
+    newConfigs[idx] = newConfigs[target]
+    newConfigs[target] = tmp
+    setEditingConfigs(newConfigs)
+  }
+
+  const resetTableConfigs = () => {
+    setEditingConfigs(DEFAULT_TABLE_CONFIGS)
+  }
+
+  if (!settings) return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">
-      <div className="text-amber-400 font-bold text-2xl">KitchenQ</div>
+      読み込み中...
     </div>
   )
 
-  const update = (patch: Partial<ShopSettings>) => setS(prev => prev ? { ...prev, ...patch } : prev)
-
-  const handleSave = () => {
-    if (s) { saveSettings(s); setSaved(true); setTimeout(() => setSaved(false), 2000) }
-  }
+  const counterConfigs = editingConfigs.filter(c => c.type === 'counter')
+  const tableConfigs = editingConfigs.filter(c => c.type === 'table')
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white pb-24" style={{fontFamily:'system-ui,sans-serif'}}>
-
-      {/* ヘッダー */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800">
-        <Link href="/kitchen" className="text-gray-400 text-2xl font-bold">←</Link>
-        <h1 className="text-lg font-bold text-amber-400">店舗設定</h1>
-        <div className="w-8" />
+    <div className="min-h-screen bg-gray-950 text-white pb-24" style={{ fontFamily: 'system-ui,sans-serif' }}>
+      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between">
+        <h1 className="text-lg font-black text-amber-400">設定</h1>
+        <button onClick={handleSave}
+          className={`px-5 py-2 rounded-xl font-black text-sm transition-all ${saved ? 'bg-green-600 text-white' : 'bg-amber-500 text-black'}`}>
+          {saved ? '保存しました！' : '保存する'}
+        </button>
       </div>
 
       <div className="p-4 flex flex-col gap-4">
 
-        {/* 卓数 */}
+        {/* ━━━ 卓・席の設定 ━━━ */}
         <div className="bg-gray-900 rounded-2xl p-4">
-          <div className="text-xs text-gray-400 uppercase tracking-wider mb-3">卓数</div>
-          <div className="text-center mb-3">
-            <span className="text-5xl font-black text-amber-400">{s.tableCount}</span>
-            <span className="text-xl text-gray-400 ml-2">卓</span>
-          </div>
-          <div className="grid grid-cols-5 gap-2 mb-3">
-            {[2,4,6,8,10,12,15,18,20].map(v => (
-              <button key={v} onClick={() => update({ tableCount: v })}
-                className={`py-3 rounded-xl font-black text-lg transition-all active:scale-95 ${
-                  s.tableCount === v ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'
-                }`}>
-                {v}
-              </button>
-            ))}
-          </div>
-          <input type="range" min={2} max={20} step={1} value={s.tableCount}
-            onChange={e => update({ tableCount: Number(e.target.value) })}
-            className="w-full accent-amber-500" />
-        </div>
-
-        {/* ワンオペモード */}
-        <div className="bg-gray-900 rounded-2xl p-4">
-          <div className="text-xs text-gray-400 uppercase tracking-wider mb-3">営業モード</div>
-          <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => update({ oneOperatorMode: false })}
-              className={`py-5 rounded-2xl font-bold text-base transition-all active:scale-95 ${
-                !s.oneOperatorMode ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'
-              }`}>
-              通常モード
-            </button>
-            <button onClick={() => update({ oneOperatorMode: true })}
-              className={`py-5 rounded-2xl font-bold text-base transition-all active:scale-95 ${
-                s.oneOperatorMode ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'
-              }`}>
-              ワンオペ
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-black text-amber-400">卓・席の設定</h2>
+            <button onClick={resetTableConfigs}
+              className="text-xs text-gray-400 bg-gray-800 px-3 py-1.5 rounded-lg">
+              デフォルトに戻す
             </button>
           </div>
-          {s.oneOperatorMode && (
-            <div className="mt-3 bg-amber-900 text-amber-200 text-xs p-3 rounded-xl text-center">
-              付きっきり料理を下げ・冷菜と放置可能料理を優先します
+
+          {/* カウンター席 */}
+          <div className="mb-4">
+            <div className="text-sm font-bold text-blue-400 mb-2">
+              カウンター席（{counterConfigs.length}席）
+              <span className="text-xs text-gray-500 ml-2">※複数選択して注文可能</span>
             </div>
-          )}
+            <div className="flex flex-wrap gap-2 mb-2">
+              {counterConfigs.map(c => (
+                <div key={c.id} className="flex items-center gap-1 bg-gray-800 border border-gray-700 px-2 py-1 rounded-lg">
+                  <button onClick={() => moveTable(c.id, 'up')} className="text-gray-500 text-xs px-1">↑</button>
+                  <span className="text-white font-bold text-sm">{c.name}</span>
+                  <button onClick={() => moveTable(c.id, 'down')} className="text-gray-500 text-xs px-1">↓</button>
+                  <button onClick={() => removeTable(c.id)} className="text-red-400 text-xs ml-1 font-black">×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* テーブル席 */}
+          <div className="mb-4">
+            <div className="text-sm font-bold text-green-400 mb-2">
+              テーブル席（{tableConfigs.length}卓）
+            </div>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {tableConfigs.map(c => (
+                <div key={c.id} className="flex items-center gap-1 bg-gray-800 border border-gray-700 px-2 py-1 rounded-lg">
+                  <button onClick={() => moveTable(c.id, 'up')} className="text-gray-500 text-xs px-1">↑</button>
+                  <span className="text-white font-bold text-sm">{c.name}</span>
+                  <button onClick={() => moveTable(c.id, 'down')} className="text-gray-500 text-xs px-1">↓</button>
+                  <button onClick={() => removeTable(c.id)} className="text-red-400 text-xs ml-1 font-black">×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 追加フォーム */}
+          <div className="border-t border-gray-800 pt-3">
+            <div className="text-xs text-gray-400 mb-2">新しい席を追加</div>
+            <div className="flex gap-2">
+              <select
+                value={newType}
+                onChange={e => setNewType(e.target.value as 'counter' | 'table')}
+                className="bg-gray-800 text-white text-sm rounded-xl px-3 py-2 border border-gray-700">
+                <option value="counter">カウンター</option>
+                <option value="table">テーブル</option>
+              </select>
+              <input
+                type="text"
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                placeholder="席名（例：C9、E）"
+                className="flex-1 bg-gray-800 text-white text-sm rounded-xl px-3 py-2 border border-gray-700"
+              />
+              <button onClick={addTable}
+                className="bg-amber-500 text-black font-black px-4 py-2 rounded-xl text-sm active:scale-95">
+                追加
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* 遅延アラート */}
+        {/* ━━━ 警告・遅延の設定 ━━━ */}
         <div className="bg-gray-900 rounded-2xl p-4">
-          <div className="text-xs text-gray-400 uppercase tracking-wider mb-4">遅延アラート設定</div>
+          <h2 className="font-black text-amber-400 mb-4">警告・遅延の設定</h2>
 
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-amber-400">注意（黄色）</span>
-              <span className="text-xl font-black text-amber-400">{Math.floor(s.warningThresholdSec / 60)}分</span>
+          <div className="flex flex-col gap-4">
+            <div>
+              <div className="text-sm text-gray-400 mb-1">黄色警告（分）</div>
+              <div className="flex items-center gap-3">
+                {[3, 5, 7, 10].map(m => (
+                  <button key={m} onClick={() => update('warningThresholdSec', m * 60)}
+                    className={`px-4 py-2 rounded-xl font-black text-sm ${settings.warningThresholdSec === m * 60 ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
+                    {m}分
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-5 gap-2 mb-2">
-              {[2,3,4,5,6].map(v => (
-                <button key={v} onClick={() => update({ warningThresholdSec: v * 60 })}
-                  className={`py-3 rounded-xl font-bold text-sm transition-all active:scale-95 ${
-                    s.warningThresholdSec === v * 60 ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'
-                  }`}>
-                  {v}分
-                </button>
-              ))}
-            </div>
-            <input type="range" min={60} max={600} step={30} value={s.warningThresholdSec}
-              onChange={e => update({ warningThresholdSec: Number(e.target.value) })}
-              className="w-full accent-amber-500" />
-          </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-red-400">危険（赤）</span>
-              <span className="text-xl font-black text-red-400">{Math.floor(s.dangerThresholdSec / 60)}分</span>
+            <div>
+              <div className="text-sm text-gray-400 mb-1">赤色遅延（分）</div>
+              <div className="flex items-center gap-3">
+                {[8, 10, 12, 15].map(m => (
+                  <button key={m} onClick={() => update('dangerThresholdSec', m * 60)}
+                    className={`px-4 py-2 rounded-xl font-black text-sm ${settings.dangerThresholdSec === m * 60 ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300'}`}>
+                    {m}分
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-5 gap-2 mb-2">
-              {[5,6,7,8,10].map(v => (
-                <button key={v} onClick={() => update({ dangerThresholdSec: v * 60 })}
-                  className={`py-3 rounded-xl font-bold text-sm transition-all active:scale-95 ${
-                    s.dangerThresholdSec === v * 60 ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300'
-                  }`}>
-                  {v}分
-                </button>
-              ))}
-            </div>
-            <input type="range" min={120} max={900} step={30} value={s.dangerThresholdSec}
-              onChange={e => update({ dangerThresholdSec: Number(e.target.value) })}
-              className="w-full accent-red-500" />
           </div>
         </div>
 
-        {/* 設備設定 */}
+        {/* ━━━ 設備の設定 ━━━ */}
         <div className="bg-gray-900 rounded-2xl p-4">
-          <div className="text-xs text-gray-400 uppercase tracking-wider mb-4">設備設定</div>
+          <h2 className="font-black text-amber-400 mb-4">設備の設定</h2>
 
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold">コンロ口数</span>
-              <span className="text-xl font-black text-amber-400">{s.stoveSlots}口</span>
+          <div className="flex flex-col gap-4">
+            <div>
+              <div className="text-sm text-gray-400 mb-1">コンロ口数</div>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5, 6].map(n => (
+                  <button key={n} onClick={() => update('stoveSlots', n)}
+                    className={`w-10 h-10 rounded-xl font-black ${settings.stoveSlots === n ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex gap-2">
-              {[1,2,3,4,5,6].map(v => (
-                <button key={v} onClick={() => update({ stoveSlots: v })}
-                  className={`flex-1 py-3 rounded-xl font-black text-lg transition-all active:scale-95 ${
-                    s.stoveSlots === v ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-400'
-                  }`}>
-                  {v}
-                </button>
-              ))}
-            </div>
-          </div>
 
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold">グリル枠数</span>
-              <span className="text-xl font-black text-amber-400">{s.grillSlots}枠</span>
+            <div>
+              <div className="text-sm text-gray-400 mb-1">グリル口数</div>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5, 6].map(n => (
+                  <button key={n} onClick={() => update('grillSlots', n)}
+                    className={`w-10 h-10 rounded-xl font-black ${settings.grillSlots === n ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex gap-2">
-              {[1,2,3,4,5,6].map(v => (
-                <button key={v} onClick={() => update({ grillSlots: v })}
-                  className={`flex-1 py-3 rounded-xl font-black text-lg transition-all active:scale-95 ${
-                    s.grillSlots === v ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-400'
-                  }`}>
-                  {v}
-                </button>
-              ))}
-            </div>
-          </div>
 
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-bold">フライヤー</span>
-            <div className="flex gap-2">
-              <button onClick={() => update({ hasFryer: false })}
-                className={`px-5 py-2 rounded-xl font-bold text-sm ${!s.hasFryer ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
-                なし
-              </button>
-              <button onClick={() => update({ hasFryer: true })}
-                className={`px-5 py-2 rounded-xl font-bold text-sm ${s.hasFryer ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
-                あり
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-bold">フライヤー</div>
+                <div className="text-xs text-gray-400">フライヤーを使用する</div>
+              </div>
+              <button onClick={() => update('hasFryer', !settings.hasFryer)}
+                className={`px-4 py-2 rounded-xl font-black text-sm ${settings.hasFryer ? 'bg-amber-500 text-black' : 'bg-gray-700 text-gray-400'}`}>
+                {settings.hasFryer ? 'あり' : 'なし'}
               </button>
             </div>
-          </div>
 
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold">藁焼き設備</span>
-            <div className="flex gap-2">
-              <button onClick={() => update({ hasStraw: false })}
-                className={`px-5 py-2 rounded-xl font-bold text-sm ${!s.hasStraw ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
-                なし
-              </button>
-              <button onClick={() => update({ hasStraw: true })}
-                className={`px-5 py-2 rounded-xl font-bold text-sm ${s.hasStraw ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
-                あり
+            {settings.hasFryer && (
+              <div>
+                <div className="text-sm text-gray-400 mb-1">フライヤー口数</div>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4].map(n => (
+                    <button key={n} onClick={() => update('fryerSlots', n)}
+                      className={`w-10 h-10 rounded-xl font-black ${settings.fryerSlots === n ? 'bg-amber-500 text-black' : 'bg-gray-800 text-gray-300'}`}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-bold">藁焼き台</div>
+                <div className="text-xs text-gray-400">藁焼き台を使用する</div>
+              </div>
+              <button onClick={() => update('hasStraw', !settings.hasStraw)}
+                className={`px-4 py-2 rounded-xl font-black text-sm ${settings.hasStraw ? 'bg-amber-500 text-black' : 'bg-gray-700 text-gray-400'}`}>
+                {settings.hasStraw ? 'あり' : 'なし'}
               </button>
             </div>
           </div>
         </div>
 
-        {/* 保存ボタン */}
+        {/* ━━━ モード設定 ━━━ */}
+        <div className="bg-gray-900 rounded-2xl p-4">
+          <h2 className="font-black text-amber-400 mb-4">モード設定</h2>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-bold">ワンオペモード</div>
+                <div className="text-xs text-gray-400">一人で調理する場合に最適化</div>
+              </div>
+              <button onClick={() => update('oneOperatorMode', !settings.oneOperatorMode)}
+                className={`px-4 py-2 rounded-xl font-black text-sm ${settings.oneOperatorMode ? 'bg-amber-500 text-black' : 'bg-gray-700 text-gray-400'}`}>
+                {settings.oneOperatorMode ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-bold">遅延アラート音</div>
+                <div className="text-xs text-gray-400">遅延時に音で知らせる</div>
+              </div>
+              <button onClick={() => update('soundAlert', !settings.soundAlert)}
+                className={`px-4 py-2 rounded-xl font-black text-sm ${settings.soundAlert ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400'}`}>
+                {settings.soundAlert ? 'ON' : 'OFF'}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <button onClick={handleSave}
-          className="w-full bg-amber-500 hover:bg-amber-400 active:scale-98 text-black font-black py-5 rounded-2xl text-xl transition-all">
-          {saved ? '✓ 保存しました！' : '設定を保存する'}
+          className={`w-full py-5 rounded-2xl font-black text-xl transition-all ${saved ? 'bg-green-600 text-white' : 'bg-amber-500 text-black'}`}>
+          {saved ? '保存しました！' : '設定を保存する'}
         </button>
-
-        {/* 設備管理へのリンク */}
-        <Link href="/equipment"
-          className="w-full bg-gray-800 text-white font-bold py-4 rounded-2xl text-center block text-sm">
-          設備管理画面へ
-        </Link>
       </div>
 
-      {/* 底部ナビ */}
       <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 flex">
-        <Link href="/kitchen" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">厨房</Link>
-        <Link href="/orders" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">注文</Link>
-        <Link href="/menu" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">メニュー</Link>
-        <Link href="/analytics" className="flex-1 py-4 text-center text-xs text-gray-400 font-bold">分析</Link>
+        <Link href="/kitchen" className="flex-1 py-3 text-center text-xs text-gray-400 font-bold">厨房</Link>
+        <Link href="/orders" className="flex-1 py-3 text-center text-xs text-gray-400 font-bold">注文</Link>
+        <Link href="/menu" className="flex-1 py-3 text-center text-xs text-gray-400 font-bold">メニュー</Link>
+        <Link href="/settings" className="flex-1 py-3 text-center text-xs text-amber-400 font-bold border-t-2 border-amber-400">設定</Link>
+        <Link href="/analytics" className="flex-1 py-3 text-center text-xs text-gray-400 font-bold">分析</Link>
       </div>
     </div>
   )

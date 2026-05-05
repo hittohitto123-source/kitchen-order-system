@@ -1,19 +1,14 @@
-export type EquipType = 'cold' | 'stove' | 'grill' | 'fryer' | 'straw'
-export type OrderStatus = 'pending' | 'cooking' | 'served'
-
-export interface Equipment {
+export interface TableConfig {
   id: string
   name: string
-  type: EquipType
-  slots: number
-  active: boolean
+  type: 'counter' | 'table'
 }
 
 export interface MenuItem {
   id: string
   name: string
   cookTime: number
-  equip: EquipType
+  equip: 'cold' | 'stove' | 'grill' | 'fryer' | 'straw'
   attn: number
   bonus: number
   active: boolean
@@ -21,9 +16,9 @@ export interface MenuItem {
 
 export interface OrderItem {
   id: number
-  table: number
+  table: string
   menu: MenuItem
-  status: OrderStatus
+  status: 'pending' | 'cooking' | 'served'
   addedAt: number
   startedAt?: number
   servedAt?: number
@@ -31,48 +26,54 @@ export interface OrderItem {
 
 export interface ShopSettings {
   tableCount: number
-  stoveSlots: number
-  grillSlots: number
-  fryerSlots: number
-  strawSlots: number
-  hasStraw: boolean
-  hasFryer: boolean
+  tableConfigs: TableConfig[]
   warningThresholdSec: number
   dangerThresholdSec: number
   oneOperatorMode: boolean
   soundAlert: boolean
+  stoveSlots: number
+  grillSlots: number
+  hasFryer: boolean
+  fryerSlots: number
+  hasStraw: boolean
 }
+
+export interface Equipment {
+  id: string
+  name: string
+  type: string
+  slots: number
+  active: boolean
+}
+
+export const DEFAULT_TABLE_CONFIGS: TableConfig[] = [
+  { id: 'c1', name: 'C1', type: 'counter' },
+  { id: 'c2', name: 'C2', type: 'counter' },
+  { id: 'c3', name: 'C3', type: 'counter' },
+  { id: 'c4', name: 'C4', type: 'counter' },
+  { id: 'c5', name: 'C5', type: 'counter' },
+  { id: 'c6', name: 'C6', type: 'counter' },
+  { id: 'c7', name: 'C7', type: 'counter' },
+  { id: 'c8', name: 'C8', type: 'counter' },
+  { id: 'tA', name: 'A', type: 'table' },
+  { id: 'tB', name: 'B', type: 'table' },
+  { id: 'tC', name: 'C', type: 'table' },
+  { id: 'tD', name: 'D', type: 'table' },
+]
 
 export const DEFAULT_SETTINGS: ShopSettings = {
-  tableCount: 8,
-  stoveSlots: 3,
-  grillSlots: 2,
-  fryerSlots: 1,
-  strawSlots: 1,
-  hasStraw: true,
-  hasFryer: true,
-  warningThresholdSec: 240,
-  dangerThresholdSec: 480,
+  tableCount: 12,
+  tableConfigs: DEFAULT_TABLE_CONFIGS,
+  warningThresholdSec: 300,
+  dangerThresholdSec: 600,
   oneOperatorMode: false,
   soundAlert: true,
+  stoveSlots: 4,
+  grillSlots: 3,
+  hasFryer: true,
+  fryerSlots: 2,
+  hasStraw: true,
 }
 
-export const DEFAULT_MENU: MenuItem[] = [
-  { id: 'm1', name: '枝豆',          cookTime: 3,  equip: 'cold',  attn: 0, bonus: 0, active: true },
-  { id: 'm2', name: '刺身盛り合わせ',  cookTime: 5,  equip: 'cold',  attn: 1, bonus: 5, active: true },
-  { id: 'm3', name: '唐揚げ',        cookTime: 10, equip: 'fryer', attn: 2, bonus: 0, active: true },
-  { id: 'm4', name: '焼鳥',          cookTime: 12, equip: 'grill', attn: 3, bonus: 0, active: true },
-  { id: 'm5', name: 'チャーハン',     cookTime: 8,  equip: 'stove', attn: 5, bonus: 0, active: true },
-  { id: 'm6', name: '藁焼きカツオ',   cookTime: 15, equip: 'straw', attn: 4, bonus: 0, active: true },
-  { id: 'm7', name: '冷奴',          cookTime: 1,  equip: 'cold',  attn: 0, bonus: 0, active: true },
-  { id: 'm8', name: 'もつ煮込み',     cookTime: 6,  equip: 'stove', attn: 1, bonus: 0, active: true },
-]
-
-export const DEFAULT_EQUIPMENT: Equipment[] = [
-  { id: 'e1', name: 'コンロ1', type: 'stove', slots: 1, active: true },
-  { id: 'e2', name: 'コンロ2', type: 'stove', slots: 1, active: true },
-  { id: 'e3', name: 'コンロ3', type: 'stove', slots: 1, active: true },
-  { id: 'e4', name: 'グリル1', type: 'grill', slots: 2, active: true },
-  { id: 'e5', name: 'フライヤー', type: 'fryer', slots: 1, active: true },
-  { id: 'e6', name: '藁焼き台', type: 'straw', slots: 1, active: true },
-]
+export const DEFAULT_MENU: MenuItem[] = []
+export const DEFAULT_EQUIPMENT: Equipment[] = []
