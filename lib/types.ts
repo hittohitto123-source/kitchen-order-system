@@ -1,3 +1,5 @@
+export type EquipType = 'cold' | 'stove' | 'grill' | 'fryer' | 'straw'
+
 export interface TableConfig {
   id: string
   name: string
@@ -8,7 +10,7 @@ export interface MenuItem {
   id: string
   name: string
   cookTime: number
-  equip: 'cold' | 'stove' | 'grill' | 'fryer' | 'straw'
+  equip: EquipType
   attn: number
   bonus: number
   active: boolean
@@ -41,7 +43,7 @@ export interface ShopSettings {
 export interface Equipment {
   id: string
   name: string
-  type: string
+  type: EquipType
   slots: number
   active: boolean
 }
