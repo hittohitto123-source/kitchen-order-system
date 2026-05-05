@@ -7,12 +7,12 @@ import { loadOrders, saveOrders, loadSettings, saveSettings, loadNextId, saveNex
 import { buildSchedule } from '../../lib/priorityEngine'
 import { generateAdvice } from '../../lib/advisor'
 
-const GENRE: Record<string, { border: string; text: string; label: string }> = {
-  cold:  { border: '#3b82f6', text: '#60a5fa', label: '冷菜' },
-  straw: { border: '#f97316', text: '#fb923c', label: '藁焼き' },
-  stove: { border: '#d97706', text: '#fbbf24', label: 'コンロ' },
-  fryer: { border: '#dc2626', text: '#f87171', label: 'フライヤー' },
-  grill: { border: '#a855f7', text: '#c084fc', label: 'グリル' },
+const GENRE: Record<string, { border: string; bg: string; text: string; label: string }> = {
+  cold:  { border: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  text: '#93c5fd', label: '冷菜' },
+  straw: { border: '#f97316', bg: 'rgba(249,115,22,0.12)',  text: '#fdba74', label: '藁焼き' },
+  stove: { border: '#d97706', bg: 'rgba(217,119,6,0.12)',   text: '#fcd34d', label: 'コンロ' },
+  fryer: { border: '#dc2626', bg: 'rgba(220,38,38,0.12)',   text: '#fca5a5', label: 'フライヤー' },
+  grill: { border: '#a855f7', bg: 'rgba(168,85,247,0.12)',  text: '#d8b4fe', label: 'グリル' },
 }
 
 function getProgressColor(p: number, over: boolean) {
@@ -76,6 +76,116 @@ const ADVICE_COLORS: Record<string, string> = {
   next:     'bg-gray-800 border-gray-600 text-gray-300',
 }
 
+// ━━━ 単体カードコンポーネント ━━━
+function OrderCard({
+  order, rank, waitSec, dangerSec, warnSec, isCombined, isBlocked, onStart
+}: {
+  order: OrderItem
+  rank: number
+  waitSec: number
+  dangerSec: number
+  warnSec: number
+  isCombined?: boolean
+  isBlocked?: boolean
+  onStart: () => void
+}) {
+  const isDanger = waitSec >= dangerSec
+  const isWarn = waitSec >= warnSec
+  const g = GENRE[order.menu.equip] || GENRE.stove
+
+  return (
+    <div style={{
+      borderTop: `4px solid ${isBlocked ? '#374151' : g.border}`,
+      backgroundColor: isDanger
+        ? `rgba(127,29,29,0.7)`
+        : isWarn
+        ? `rgba(120,53,15,0.7)`
+        : isBlocked
+        ? '#0d0d0d'
+        : g.bg,
+      borderRadius: '10px',
+      padding: '8px 10px',
+      opacity: isBlocked ? 0.5 : 1,
+      position: 'relative',
+    }}>
+      {/* 上段：ジャンルバッジ + 順位 + 商品名 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+        <span style={{
+          backgroundColor: `${g.border}33`,
+          color: g.text,
+          fontSize: '10px',
+          fontWeight: 'bold',
+          padding: '1px 5px',
+          borderRadius: '4px',
+          flexShrink: 0,
+          border: `1px solid ${g.border}66`,
+        }}>{g.label}</span>
+        <span style={{ fontSize: '10px', color: '#6b7280', flexShrink: 0 }}>{rank}</span>
+        <span style={{
+          fontSize: '15px',
+          fontWeight: 'black',
+          color: 'white',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          flex: 1,
+          fontFamily: 'system-ui',
+          fontWeight: '900',
+        }}>{order.menu.name}</span>
+        {isCombined && (
+          <span style={{ color: '#FFD700', fontSize: '11px', flexShrink: 0 }}>★</span>
+        )}
+      </div>
+
+      {/* 下段：卓番 + 待機時間 + ボタン */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <span style={{
+            fontSize: '26px',
+            fontWeight: '900',
+            color: isDanger ? '#fca5a5' : isWarn ? '#fcd34d' : '#FFD700',
+            lineHeight: 1,
+            fontFamily: 'system-ui',
+          }}>{order.table}卓</span>
+          {waitSec > 30 && (
+            <span style={{
+              fontSize: '10px',
+              color: isDanger ? '#ef4444' : isWarn ? '#f59e0b' : '#6b7280',
+              marginLeft: '6px',
+            }}>{formatWait(waitSec)}</span>
+          )}
+          {isDanger && !isBlocked && (
+            <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 'bold', marginLeft: '4px' }}>遅延!</span>
+          )}
+          {isBlocked && (
+            <span style={{ fontSize: '10px', color: '#6b7280', marginLeft: '4px' }}>満杯</span>
+          )}
+        </div>
+        <button
+          onClick={onStart}
+          disabled={isBlocked}
+          style={{
+            backgroundColor: isBlocked ? '#374151' : '#2563eb',
+            color: isBlocked ? '#6b7280' : 'white',
+            width: '36px',
+            height: '32px',
+            borderRadius: '8px',
+            fontSize: '18px',
+            fontWeight: 'bold',
+            border: 'none',
+            cursor: isBlocked ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+          {isBlocked ? '×' : '▶'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function KitchenPage() {
   const [orders, setOrders] = useState<OrderItem[]>([])
   const [menuList, setMenuList] = useState<MenuItem[]>([])
@@ -94,16 +204,11 @@ export default function KitchenPage() {
   const alertedTables = useRef<Set<number>>(new Set())
 
   useEffect(() => {
-    function updateLayout() {
-      setLayout(getLayout(window.innerWidth, window.innerHeight))
-    }
+    function updateLayout() { setLayout(getLayout(window.innerWidth, window.innerHeight)) }
     updateLayout()
     window.addEventListener('resize', updateLayout)
     window.addEventListener('orientationchange', updateLayout)
-    return () => {
-      window.removeEventListener('resize', updateLayout)
-      window.removeEventListener('orientationchange', updateLayout)
-    }
+    return () => { window.removeEventListener('resize', updateLayout); window.removeEventListener('orientationchange', updateLayout) }
   }, [])
 
   useEffect(() => {
@@ -259,7 +364,7 @@ export default function KitchenPage() {
     return Math.floor((now - Math.min(...items.map(o => o.addedAt))) / 1000)
   }
 
-  // ━━━ コンパクトカードのレンダリング ━━━
+  // ━━━ カードリスト生成 ━━━
   const renderCards = () => {
     const rendered = new Set<number>()
     const elements: React.ReactNode[] = []
@@ -267,52 +372,58 @@ export default function KitchenPage() {
     scheduled.forEach((o, i) => {
       if (rendered.has(o.id)) return
       const waitSec = Math.floor((now - o.addedAt) / 1000)
-      const isDanger = waitSec >= settings.dangerThresholdSec
-      const isWarn = waitSec >= settings.warningThresholdSec
-      const isBlocked = o.equipBlocked
-      const g = GENRE[o.menu.equip] || GENRE.stove
 
       if (o.batchCount > 1 && o.isBatchLeader) {
+        // まとめグループ → 緑の枠で全体を囲む
         const group = scheduled.filter(s => s.menu.id === o.menu.id)
         group.forEach(s => rendered.add(s.id))
 
         elements.push(
-          <div key={`grp-${o.menu.id}`} style={{ gridColumn: `span ${Math.min(group.length, layout.cols)}` }}>
-            <div className="inline-flex items-center gap-1 px-2 py-0.5 mb-1 rounded-full border text-xs font-black"
-              style={{ backgroundColor: 'rgba(34,197,94,0.15)', borderColor: '#22c55e', color: '#22c55e' }}>
+          <div
+            key={`grp-${o.menu.id}`}
+            style={{
+              gridColumn: `span ${Math.min(group.length, layout.cols)}`,
+              border: '2px solid #22c55e',
+              borderRadius: '12px',
+              padding: '6px',
+              backgroundColor: 'rgba(34,197,94,0.07)',
+            }}>
+            {/* まとめバッジ */}
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              backgroundColor: 'rgba(34,197,94,0.2)',
+              border: '1px solid #22c55e',
+              color: '#4ade80',
+              fontSize: '11px',
+              fontWeight: '900',
+              padding: '2px 8px',
+              borderRadius: '20px',
+              marginBottom: '5px',
+            }}>
               ★ まとめて{group.length}件：{o.menu.name}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(group.length, layout.cols)}, 1fr)`, gap: '6px' }}>
+            {/* グループ内カードを横並び */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${Math.min(group.length, layout.cols)}, 1fr)`,
+              gap: '5px',
+            }}>
               {group.map((go) => {
                 const gWait = Math.floor((now - go.addedAt) / 1000)
-                const gDanger = gWait >= settings.dangerThresholdSec
-                const gWarn = gWait >= settings.warningThresholdSec
                 return (
-                  <div key={go.id} className="rounded-xl p-2 relative"
-                    style={{
-                      borderLeft: `4px solid ${g.border}`,
-                      backgroundColor: gDanger ? 'rgba(127,29,29,0.6)' : gWarn ? 'rgba(120,53,15,0.6)' : '#1a1f2e',
-                      boxShadow: `0 0 8px ${g.border}44`,
-                    }}>
-                    <div className="absolute top-1 right-1 text-xs font-black"
-                      style={{ color: '#FFD700', fontSize: '10px' }}>★</div>
-                    <div className="flex items-baseline gap-1 mb-0.5 pr-5">
-                      <span style={{ fontSize: '9px', color: '#6b7280' }}>{scheduled.indexOf(go) + 1}</span>
-                      <span className="font-black text-white truncate" style={{ fontSize: '13px', lineHeight: 1.2 }}>{go.menu.name}</span>
-                    </div>
-                    <div className="font-black mb-1" style={{ color: '#FFD700', fontSize: '28px', lineHeight: 1 }}>{go.table}卓</div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span style={{ fontSize: '10px', color: g.text }}>{g.label}</span>
-                        {gWait > 30 && <span style={{ fontSize: '9px', color: gDanger ? '#ef4444' : gWarn ? '#f59e0b' : '#6b7280', marginLeft: '4px' }}>{formatWait(gWait)}</span>}
-                      </div>
-                      <button onClick={() => !go.equipBlocked && handleStartPress(go)} disabled={go.equipBlocked}
-                        className="rounded-lg font-black active:scale-95 flex items-center justify-center"
-                        style={{ backgroundColor: go.equipBlocked ? '#374151' : '#2563eb', color: 'white', width: '32px', height: '28px', fontSize: '16px' }}>
-                        {go.equipBlocked ? '×' : '▶'}
-                      </button>
-                    </div>
-                  </div>
+                  <OrderCard
+                    key={go.id}
+                    order={go}
+                    rank={scheduled.indexOf(go) + 1}
+                    waitSec={gWait}
+                    dangerSec={settings.dangerThresholdSec}
+                    warnSec={settings.warningThresholdSec}
+                    isCombined={true}
+                    isBlocked={go.equipBlocked}
+                    onStart={() => handleStartPress(go)}
+                  />
                 )
               })}
             </div>
@@ -321,30 +432,17 @@ export default function KitchenPage() {
       } else if (!rendered.has(o.id)) {
         rendered.add(o.id)
         elements.push(
-          <div key={o.id} className="rounded-xl p-2 relative"
-            style={{
-              borderLeft: `4px solid ${isBlocked ? '#374151' : g.border}`,
-              backgroundColor: isDanger ? 'rgba(127,29,29,0.6)' : isWarn ? 'rgba(120,53,15,0.6)' : isBlocked ? '#0f0f0f' : '#1a1f2e',
-              opacity: isBlocked ? 0.55 : 1,
-            }}>
-            <div className="flex items-baseline gap-1 mb-0.5 pr-5">
-              <span style={{ fontSize: '9px', color: '#6b7280' }}>{i + 1}</span>
-              <span className="font-black text-white truncate" style={{ fontSize: '13px', lineHeight: 1.2 }}>{o.menu.name}</span>
-            </div>
-            <div className="font-black mb-1" style={{ color: '#FFD700', fontSize: '28px', lineHeight: 1 }}>{o.table}卓</div>
-            <div className="flex items-center justify-between">
-              <div>
-                <span style={{ fontSize: '10px', color: isBlocked ? '#6b7280' : g.text }}>{g.label}</span>
-                {waitSec > 30 && <span style={{ fontSize: '9px', color: isDanger ? '#ef4444' : isWarn ? '#f59e0b' : '#6b7280', marginLeft: '4px' }}>{formatWait(waitSec)}</span>}
-                {isDanger && !isBlocked && <span style={{ fontSize: '9px', color: '#ef4444', display: 'block', fontWeight: 'bold' }}>遅延!</span>}
-              </div>
-              <button onClick={() => !isBlocked && handleStartPress(o)} disabled={isBlocked}
-                className="rounded-lg font-black active:scale-95 flex items-center justify-center"
-                style={{ backgroundColor: isBlocked ? '#374151' : '#2563eb', color: isBlocked ? '#6b7280' : 'white', width: '32px', height: '28px', fontSize: '16px' }}>
-                {isBlocked ? '×' : '▶'}
-              </button>
-            </div>
-          </div>
+          <OrderCard
+            key={o.id}
+            order={o}
+            rank={i + 1}
+            waitSec={waitSec}
+            dangerSec={settings.dangerThresholdSec}
+            warnSec={settings.warningThresholdSec}
+            isCombined={false}
+            isBlocked={o.equipBlocked}
+            onStart={() => handleStartPress(o)}
+          />
         )
       }
     })
@@ -354,7 +452,6 @@ export default function KitchenPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white" style={{ fontFamily: 'system-ui,sans-serif' }}>
 
-      {/* 営業終了モーダル */}
       {showCloseConfirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem' }}>
           <div className="bg-gray-900 rounded-3xl p-6 w-full max-w-sm border-2 border-red-700">
@@ -368,7 +465,6 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* バッチモーダル */}
       {batchModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem' }}>
           <div className="bg-gray-900 rounded-3xl p-6 w-full max-w-sm border-2 border-blue-700">
@@ -403,10 +499,10 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* ━━━ ヘッダー（超圧縮） ━━━ */}
+      {/* ヘッダー */}
       <div className="bg-gray-900 border-b border-gray-800 px-3 py-1.5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <span className="text-sm font-black text-amber-400">KitchenQ</span>
             <span className="text-xs text-green-500">同期</span>
             <div className="flex gap-2 text-xs">
@@ -477,21 +573,26 @@ export default function KitchenPage() {
         ))}
       </div>
 
-      {/* ━━━ 優先順位タブ ━━━ */}
+      {/* 優先順位タブ */}
       {activeTab === 'priority' && (
-        <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 110px)' }}>
+        <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 105px)' }}>
 
-          {/* 左：待機中（自動列数） */}
+          {/* 左：待機中 */}
           <div className="overflow-y-auto flex-1" style={{ borderRight: '1px solid #1f2937' }}>
             <div className="bg-gray-900 px-3 py-1 border-b border-gray-800 sticky top-0 z-10">
               <span className="text-xs font-black text-amber-400">次にやること（{scheduled.length}件）</span>
-              <span className="text-xs text-gray-500 ml-2">{layout.isLandscape ? '横向き' : '縦向き'}・{layout.cols}列</span>
             </div>
-            <div className="p-1.5" style={{ display: 'grid', gridTemplateColumns: `repeat(${layout.cols}, 1fr)`, gap: '6px' }}>
+            <div style={{
+              padding: '6px',
+              display: 'grid',
+              gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
+              gap: '5px',
+              alignItems: 'start',
+            }}>
               {scheduled.length === 0 && (
-                <div className="col-span-3 text-center py-10 text-gray-600">
-                  <div className="text-3xl mb-2">✓</div>
-                  <div className="text-sm">待機なし</div>
+                <div style={{ gridColumn: `span ${layout.cols}`, textAlign: 'center', padding: '40px', color: '#4b5563' }}>
+                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>✓</div>
+                  <div>待機なし</div>
                 </div>
               )}
               {renderCards()}
@@ -499,15 +600,14 @@ export default function KitchenPage() {
           </div>
 
           {/* 右：調理中 */}
-          <div className="overflow-y-auto" style={{ width: layout.isLandscape ? '22%' : '28%' }}>
+          <div className="overflow-y-auto" style={{ width: layout.isLandscape ? '20%' : '27%' }}>
             <div className="bg-gray-900 px-2 py-1 border-b border-gray-800 sticky top-0 z-10">
               <span className="text-xs font-black text-blue-400">調理中（{cooking.length}）</span>
             </div>
-            <div className="p-1.5">
+            <div style={{ padding: '5px' }}>
               {cooking.length === 0 && (
-                <div className="text-center py-6 text-gray-600">
-                  <div className="text-xl mb-1">🍳</div>
-                  <div style={{ fontSize: '10px' }}>なし</div>
+                <div style={{ textAlign: 'center', padding: '24px', color: '#4b5563' }}>
+                  <div style={{ fontSize: '20px' }}>🍳</div>
                 </div>
               )}
               {cooking.map(o => {
@@ -517,21 +617,25 @@ export default function KitchenPage() {
                 const progress = Math.min((elapsed / stdSec) * 100, 100)
                 const isOver = elapsed > stdSec
                 return (
-                  <div key={o.id} className="rounded-xl p-2 mb-1.5" style={{ borderLeft: `4px solid ${g.border}`, backgroundColor: '#1a1f2e' }}>
-                    <div className="flex items-baseline gap-1 mb-0.5">
-                      <span className="text-blue-400" style={{ fontSize: '11px' }}>▶</span>
-                      <span className="font-black text-white truncate" style={{ fontSize: '12px' }}>{o.menu.name}</span>
+                  <div key={o.id} style={{
+                    borderTop: `4px solid ${g.border}`,
+                    backgroundColor: g.bg,
+                    borderRadius: '8px',
+                    padding: '7px 8px',
+                    marginBottom: '5px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
+                      <span style={{ color: '#60a5fa', fontSize: '11px' }}>▶</span>
+                      <span style={{ fontSize: '13px', fontWeight: '900', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.menu.name}</span>
                     </div>
-                    <div className="font-black mb-1" style={{ color: '#FFD700', fontSize: '22px', lineHeight: 1 }}>{o.table}卓</div>
-                    <div className="w-full h-1.5 bg-gray-800 rounded-full mb-1 overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-1000"
-                        style={{ width: `${progress}%`, backgroundColor: getProgressColor(progress, isOver) }} />
+                    <div style={{ fontSize: '22px', fontWeight: '900', color: '#FFD700', lineHeight: 1, marginBottom: '4px' }}>{o.table}卓</div>
+                    <div style={{ width: '100%', height: '5px', backgroundColor: '#1f2937', borderRadius: '999px', overflow: 'hidden', marginBottom: '5px' }}>
+                      <div style={{ height: '100%', width: `${progress}%`, backgroundColor: getProgressColor(progress, isOver), borderRadius: '999px', transition: 'width 1s' }} />
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: '9px', color: isOver ? '#ef4444' : '#6b7280' }}>{formatWait(elapsed)}</span>
                       <button onClick={() => setStatus(o.id, 'served')}
-                        className="rounded-lg font-black active:scale-95"
-                        style={{ backgroundColor: '#16a34a', color: 'white', fontSize: '11px', padding: '4px 10px' }}>
+                        style={{ backgroundColor: '#16a34a', color: 'white', fontSize: '11px', fontWeight: 'bold', padding: '3px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}>
                         完了
                       </button>
                     </div>
@@ -545,8 +649,8 @@ export default function KitchenPage() {
 
       {/* 卓一覧タブ */}
       {activeTab === 'tables' && (
-        <div className="p-3 pb-20 overflow-y-auto" style={{ height: 'calc(100vh - 110px)' }}>
-          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(layout.cols + 1, 4)}, 1fr)` }}>
+        <div className="p-3 pb-20 overflow-y-auto" style={{ height: 'calc(100vh - 105px)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(layout.cols + 1, 5)}, 1fr)`, gap: '8px' }}>
             {tables.map(t => {
               const ws = getWaitSec(t)
               const items = orders.filter(o => o.table === t)
@@ -556,17 +660,25 @@ export default function KitchenPage() {
               const cookingCount = items.filter(o => o.status === 'cooking').length
               return (
                 <button key={t} onClick={() => { setSelTable(String(t)); setActiveTab('add') }}
-                  className={`rounded-2xl p-3 text-left active:scale-95 border-2 ${isDanger ? 'bg-red-950 border-red-600' : isWarn ? 'bg-amber-950 border-amber-600' : items.length ? 'bg-gray-800 border-gray-600' : 'bg-gray-900 border-gray-800 opacity-40'}`}>
-                  <div className="text-xs text-gray-400">{t}卓</div>
+                  style={{
+                    borderRadius: '12px',
+                    padding: '10px',
+                    textAlign: 'left',
+                    border: `2px solid ${isDanger ? '#dc2626' : isWarn ? '#d97706' : items.length ? '#4b5563' : '#1f2937'}`,
+                    backgroundColor: isDanger ? 'rgba(127,29,29,0.5)' : isWarn ? 'rgba(120,53,15,0.5)' : items.length ? '#1f2937' : '#111',
+                    opacity: items.length ? 1 : 0.4,
+                    cursor: 'pointer',
+                  }}>
+                  <div style={{ fontSize: '11px', color: '#6b7280' }}>{t}卓</div>
                   {ws !== null ? (
-                    <div className={`text-xl font-black ${isDanger ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-green-400'}`}>{formatWaitJP(ws)}</div>
+                    <div style={{ fontSize: '20px', fontWeight: '900', color: isDanger ? '#fca5a5' : isWarn ? '#fcd34d' : '#4ade80' }}>{formatWaitJP(ws)}</div>
                   ) : (
-                    <div className="text-base font-black text-gray-600">空き</div>
+                    <div style={{ fontSize: '14px', fontWeight: '900', color: '#374151' }}>空き</div>
                   )}
                   {(pendingCount > 0 || cookingCount > 0) && (
-                    <div className="flex gap-1 mt-1 flex-wrap">
-                      {cookingCount > 0 && <span className="text-xs bg-blue-800 text-blue-200 px-1 py-0.5 rounded">{cookingCount}調</span>}
-                      {pendingCount > 0 && <span className="text-xs bg-gray-700 text-gray-300 px-1 py-0.5 rounded">{pendingCount}待</span>}
+                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
+                      {cookingCount > 0 && <span style={{ fontSize: '9px', backgroundColor: '#1e3a5f', color: '#93c5fd', padding: '1px 5px', borderRadius: '4px' }}>{cookingCount}調</span>}
+                      {pendingCount > 0 && <span style={{ fontSize: '9px', backgroundColor: '#1f2937', color: '#9ca3af', padding: '1px 5px', borderRadius: '4px' }}>{pendingCount}待</span>}
                     </div>
                   )}
                 </button>
@@ -578,7 +690,7 @@ export default function KitchenPage() {
 
       {/* 注文追加タブ */}
       {activeTab === 'add' && (
-        <div className="pb-20 overflow-y-auto" style={{ height: 'calc(100vh - 110px)' }}>
+        <div className="pb-20 overflow-y-auto" style={{ height: 'calc(100vh - 105px)' }}>
           <div className="bg-gray-900 px-4 py-2 border-b border-gray-800">
             <div className="text-xs text-gray-400 mb-1.5">卓番号</div>
             <div className="flex overflow-x-auto gap-2">
@@ -598,21 +710,31 @@ export default function KitchenPage() {
               </button>
             ))}
           </div>
-          <div className="p-2" style={{ display: 'grid', gridTemplateColumns: `repeat(${layout.cols}, 1fr)`, gap: '8px' }}>
+          <div style={{ padding: '8px', display: 'grid', gridTemplateColumns: `repeat(${layout.cols}, 1fr)`, gap: '8px' }}>
             {filteredMenu().map(m => {
               const count = orderCount[m.id] || 0
               const g = GENRE[m.equip] || GENRE.stove
               return (
                 <button key={m.id} onClick={() => { setSelMenu(m.id); addOrder(m.id) }}
-                  className="rounded-xl p-3 text-left active:scale-95 relative"
-                  style={{ borderLeft: `4px solid ${g.border}`, border: '2px solid #374151', borderLeftWidth: '4px', borderLeftColor: g.border, backgroundColor: '#1a1f2e' }}>
+                  style={{
+                    borderTop: `4px solid ${g.border}`,
+                    backgroundColor: g.bg,
+                    borderRadius: '10px',
+                    padding: '10px 12px',
+                    textAlign: 'left',
+                    border: '2px solid #374151',
+                    borderTopWidth: '4px',
+                    borderTopColor: g.border,
+                    cursor: 'pointer',
+                    position: 'relative',
+                  }}>
                   {count > 0 && (
-                    <div className="absolute top-1.5 left-1.5 bg-gray-700 text-gray-300 text-xs px-1.5 py-0.5 rounded-full font-bold" style={{ fontSize: '9px' }}>{count}回</div>
+                    <div style={{ position: 'absolute', top: '6px', right: '6px', backgroundColor: '#374151', color: '#d1d5db', fontSize: '9px', padding: '1px 5px', borderRadius: '999px', fontWeight: 'bold' }}>{count}回</div>
                   )}
-                  <div className="font-bold text-sm text-white mb-1 mt-3">{m.name}</div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-gray-400">{m.cookTime}分</span>
-                    <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${g.border}22`, color: g.text, fontSize: '10px' }}>{g.label}</span>
+                  <div style={{ fontSize: '14px', fontWeight: '900', color: 'white', marginBottom: '4px', paddingRight: count > 0 ? '32px' : '0' }}>{m.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', color: '#6b7280' }}>{m.cookTime}分</span>
+                    <span style={{ fontSize: '10px', backgroundColor: `${g.border}33`, color: g.text, padding: '1px 6px', borderRadius: '4px', border: `1px solid ${g.border}66` }}>{g.label}</span>
                   </div>
                 </button>
               )
