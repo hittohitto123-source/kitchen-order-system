@@ -75,106 +75,6 @@ const ADVICE_COLORS: Record<string, string> = {
   next:     'bg-gray-800 border-gray-600 text-gray-300',
 }
 
-function OrderCard({
-  order, rank, waitSec, dangerSec, warnSec, isCombined, isBlocked, onStart
-}: {
-  order: OrderItem
-  rank: number
-  waitSec: number
-  dangerSec: number
-  warnSec: number
-  isCombined?: boolean
-  isBlocked?: boolean
-  onStart: () => void
-}) {
-  const isDanger = waitSec >= dangerSec
-  const isWarn = waitSec >= warnSec
-  const g = GENRE[order.menu.equip] || GENRE.stove
-
-  return (
-    <div style={{
-      borderTop: `4px solid ${isBlocked ? '#374151' : g.border}`,
-      backgroundColor: isDanger ? 'rgba(127,29,29,0.7)' : isWarn ? 'rgba(120,53,15,0.7)' : isBlocked ? '#0d0d0d' : g.bg,
-      borderRadius: '10px',
-      padding: '7px 9px',
-      opacity: isBlocked ? 0.5 : 1,
-      position: 'relative',
-    }}>
-      {/* 上段：ジャンルバッジ + 順位 + 商品名 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
-        <span style={{
-          backgroundColor: `${g.border}33`,
-          color: g.text,
-          fontSize: '10px',
-          fontWeight: 'bold',
-          padding: '1px 5px',
-          borderRadius: '4px',
-          flexShrink: 0,
-          border: `1px solid ${g.border}66`,
-        }}>{g.label}</span>
-        <span style={{ fontSize: '10px', color: '#6b7280', flexShrink: 0 }}>{rank}</span>
-        <span style={{
-          fontSize: '15px',
-          fontWeight: '900',
-          color: 'white',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          flex: 1,
-        }}>{order.menu.name}</span>
-        {isCombined && (
-          <span style={{ color: '#FFD700', fontSize: '11px', flexShrink: 0 }}>★</span>
-        )}
-      </div>
-
-      {/* 下段：卓番 + 待機時間 + ボタン */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <span style={{
-            fontSize: '26px',
-            fontWeight: '900',
-            color: isDanger ? '#fca5a5' : isWarn ? '#fcd34d' : '#FFD700',
-            lineHeight: 1,
-          }}>{order.table}卓</span>
-          {waitSec > 30 && (
-            <span style={{
-              fontSize: '10px',
-              color: isDanger ? '#ef4444' : isWarn ? '#f59e0b' : '#6b7280',
-              marginLeft: '6px',
-            }}>{formatWait(waitSec)}</span>
-          )}
-          {isDanger && !isBlocked && (
-            <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 'bold', marginLeft: '4px' }}>遅延!</span>
-          )}
-          {isBlocked && (
-            <span style={{ fontSize: '10px', color: '#6b7280', marginLeft: '4px' }}>満杯</span>
-          )}
-        </div>
-        <button
-          onClick={onStart}
-          disabled={!!isBlocked}
-          style={{
-            backgroundColor: isBlocked ? '#374151' : '#2563eb',
-            color: isBlocked ? '#6b7280' : 'white',
-            width: '36px',
-            height: '32px',
-            borderRadius: '8px',
-            fontSize: '16px',
-            fontWeight: 'bold',
-            border: 'none',
-            cursor: isBlocked ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}>
-          {isBlocked ? '×' : '▶'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
 export default function KitchenPage() {
   const [orders, setOrders] = useState<OrderItem[]>([])
   const [menuList, setMenuList] = useState<MenuItem[]>([])
@@ -289,6 +189,22 @@ export default function KitchenPage() {
     }
   }
 
+  const setStatusBatch = async (ids: number[], status: OrderItem['status']) => {
+    const t = Date.now()
+    const updated = orders.map(o => ids.includes(o.id) ? {
+      ...o, status,
+      startedAt: status === 'cooking' ? t : o.startedAt,
+      servedAt: status === 'served' ? t : o.servedAt,
+    } : o)
+    commit(updated)
+    if (status === 'served') {
+      for (const id of ids) {
+        const order = updated.find(o => o.id === id)
+        if (order) { alertedTables.current.delete(order.table); await logAnalytics(order) }
+      }
+    }
+  }
+
   const addOrder = (menuId?: string) => {
     const menu = menuList.find(m => m.id === (menuId || selMenu))
     if (!menu || !settings) return
@@ -356,79 +272,102 @@ export default function KitchenPage() {
     return Math.floor((now - Math.min(...items.map(o => o.addedAt))) / 1000)
   }
 
+  // ━━━ 調理中をメニューごとにグループ化 ━━━
+  const cookingGroups: { menuId: string; menuName: string; equip: string; orders: OrderItem[] }[] = []
+  const cookingRendered = new Set<number>()
+  cooking.forEach(o => {
+    if (cookingRendered.has(o.id)) return
+    const sameMenu = cooking.filter(c => c.menu.id === o.menu.id)
+    sameMenu.forEach(c => cookingRendered.add(c.id))
+    cookingGroups.push({ menuId: o.menu.id, menuName: o.menu.name, equip: o.menu.equip, orders: sameMenu })
+  })
+
+  // ━━━ 待機カードのレンダリング ━━━
   const renderCards = () => {
     const rendered = new Set<number>()
     const elements: React.ReactNode[] = []
+    let rank = 0
 
-    scheduled.forEach((o, i) => {
+    scheduled.forEach((o) => {
       if (rendered.has(o.id)) return
+      rank++
       const waitSec = Math.floor((now - o.addedAt) / 1000)
+      const isDanger = waitSec >= settings.dangerThresholdSec
+      const isWarn = waitSec >= settings.warningThresholdSec
+      const isBlocked = o.equipBlocked
+      const g = GENRE[o.menu.equip] || GENRE.stove
 
       if (o.batchCount > 1 && o.isBatchLeader) {
+        // ━━ まとめグループ → 1枚のカードにまとめる ━━
         const group = scheduled.filter(s => s.menu.id === o.menu.id)
         group.forEach(s => rendered.add(s.id))
+        const tables = group.map(go => `${go.table}卓`).join('・')
+        const maxWait = Math.max(...group.map(go => Math.floor((now - go.addedAt) / 1000)))
+        const groupDanger = maxWait >= settings.dangerThresholdSec
+        const groupWarn = maxWait >= settings.warningThresholdSec
 
         elements.push(
           <div key={`grp-${o.menu.id}`} style={{
-            gridColumn: `span ${Math.min(group.length, layout.cols)}`,
             border: '2px solid #22c55e',
-            borderRadius: '12px',
-            padding: '6px',
-            backgroundColor: 'rgba(34,197,94,0.07)',
+            borderRadius: '10px',
+            padding: '7px 9px',
+            backgroundColor: groupDanger ? 'rgba(127,29,29,0.7)' : groupWarn ? 'rgba(120,53,15,0.7)' : 'rgba(34,197,94,0.07)',
           }}>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              backgroundColor: 'rgba(34,197,94,0.2)',
-              border: '1px solid #22c55e',
-              color: '#4ade80',
-              fontSize: '11px',
-              fontWeight: '900',
-              padding: '2px 8px',
-              borderRadius: '20px',
-              marginBottom: '5px',
-            }}>
-              ★ まとめて{group.length}件：{o.menu.name}
+            {/* ジャンル + まとめバッジ + 順位 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+              <span style={{ backgroundColor: `${g.border}33`, color: g.text, fontSize: '10px', fontWeight: 'bold', padding: '1px 5px', borderRadius: '4px', border: `1px solid ${g.border}66`, flexShrink: 0 }}>{g.label}</span>
+              <span style={{ fontSize: '10px', color: '#6b7280', flexShrink: 0 }}>{rank}</span>
+              <span style={{ fontSize: '15px', fontWeight: '900', color: 'white', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.menu.name}</span>
+              <span style={{ backgroundColor: 'rgba(34,197,94,0.2)', border: '1px solid #22c55e', color: '#4ade80', fontSize: '10px', fontWeight: '900', padding: '1px 6px', borderRadius: '20px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                ★{group.length}件
+              </span>
             </div>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${Math.min(group.length, layout.cols)}, 1fr)`,
-              gap: '5px',
-            }}>
-              {group.map((go) => {
-                const gWait = Math.floor((now - go.addedAt) / 1000)
-                return (
-                  <OrderCard
-                    key={go.id}
-                    order={go}
-                    rank={scheduled.indexOf(go) + 1}
-                    waitSec={gWait}
-                    dangerSec={settings.dangerThresholdSec}
-                    warnSec={settings.warningThresholdSec}
-                    isCombined={true}
-                    isBlocked={go.equipBlocked}
-                    onStart={() => handleStartPress(go)}
-                  />
-                )
-              })}
+            {/* 卓番一覧 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '22px', fontWeight: '900', color: groupDanger ? '#fca5a5' : groupWarn ? '#fcd34d' : '#4ade80', lineHeight: 1 }}>{tables}</div>
+                {maxWait > 30 && <span style={{ fontSize: '10px', color: groupDanger ? '#ef4444' : groupWarn ? '#f59e0b' : '#6b7280' }}>{formatWait(maxWait)}</span>}
+                {groupDanger && <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 'bold', marginLeft: '4px' }}>遅延!</span>}
+              </div>
+              <button
+                onClick={() => handleStartPress(o)}
+                disabled={!!isBlocked}
+                style={{ backgroundColor: isBlocked ? '#374151' : '#2563eb', color: isBlocked ? '#6b7280' : 'white', width: '40px', height: '34px', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', border: 'none', cursor: isBlocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {isBlocked ? '×' : '▶'}
+              </button>
             </div>
           </div>
         )
       } else if (!rendered.has(o.id)) {
         rendered.add(o.id)
         elements.push(
-          <OrderCard
-            key={o.id}
-            order={o}
-            rank={i + 1}
-            waitSec={waitSec}
-            dangerSec={settings.dangerThresholdSec}
-            warnSec={settings.warningThresholdSec}
-            isCombined={false}
-            isBlocked={o.equipBlocked}
-            onStart={() => handleStartPress(o)}
-          />
+          <div key={o.id} style={{
+            borderTop: `4px solid ${isBlocked ? '#374151' : g.border}`,
+            backgroundColor: isDanger ? 'rgba(127,29,29,0.7)' : isWarn ? 'rgba(120,53,15,0.7)' : isBlocked ? '#0d0d0d' : g.bg,
+            borderRadius: '10px',
+            padding: '7px 9px',
+            opacity: isBlocked ? 0.5 : 1,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+              <span style={{ backgroundColor: `${g.border}33`, color: g.text, fontSize: '10px', fontWeight: 'bold', padding: '1px 5px', borderRadius: '4px', border: `1px solid ${g.border}66`, flexShrink: 0 }}>{g.label}</span>
+              <span style={{ fontSize: '10px', color: '#6b7280', flexShrink: 0 }}>{rank}</span>
+              <span style={{ fontSize: '15px', fontWeight: '900', color: 'white', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.menu.name}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <span style={{ fontSize: '26px', fontWeight: '900', color: isDanger ? '#fca5a5' : isWarn ? '#fcd34d' : '#FFD700', lineHeight: 1 }}>{o.table}卓</span>
+                {waitSec > 30 && <span style={{ fontSize: '10px', color: isDanger ? '#ef4444' : isWarn ? '#f59e0b' : '#6b7280', marginLeft: '6px' }}>{formatWait(waitSec)}</span>}
+                {isDanger && !isBlocked && <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 'bold', marginLeft: '4px' }}>遅延!</span>}
+                {isBlocked && <span style={{ fontSize: '10px', color: '#6b7280', marginLeft: '4px' }}>満杯</span>}
+              </div>
+              <button
+                onClick={() => handleStartPress(o)}
+                disabled={!!isBlocked}
+                style={{ backgroundColor: isBlocked ? '#374151' : '#2563eb', color: isBlocked ? '#6b7280' : 'white', width: '36px', height: '32px', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', border: 'none', cursor: isBlocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {isBlocked ? '×' : '▶'}
+              </button>
+            </div>
+          </div>
         )
       }
     })
@@ -562,6 +501,8 @@ export default function KitchenPage() {
       {/* 優先順位タブ */}
       {activeTab === 'priority' && (
         <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 105px)' }}>
+
+          {/* 左：待機中 */}
           <div className="overflow-y-auto flex-1" style={{ borderRight: '1px solid #1f2937' }}>
             <div className="bg-gray-900 px-3 py-1 border-b border-gray-800 sticky top-0 z-10">
               <span className="text-xs font-black text-amber-400">次にやること（{scheduled.length}件）</span>
@@ -577,37 +518,66 @@ export default function KitchenPage() {
             </div>
           </div>
 
+          {/* 右：調理中（メニューごとにグループ化） */}
           <div className="overflow-y-auto" style={{ width: layout.isLandscape ? '20%' : '27%' }}>
             <div className="bg-gray-900 px-2 py-1 border-b border-gray-800 sticky top-0 z-10">
-              <span className="text-xs font-black text-blue-400">調理中（{cooking.length}）</span>
+              <span className="text-xs font-black text-blue-400">調理中（{cookingGroups.length}種・{cooking.length}件）</span>
             </div>
             <div style={{ padding: '5px' }}>
-              {cooking.length === 0 && (
+              {cookingGroups.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '24px', color: '#4b5563' }}>
                   <div style={{ fontSize: '20px' }}>🍳</div>
                 </div>
               )}
-              {cooking.map(o => {
-                const g = GENRE[o.menu.equip] || GENRE.stove
-                const elapsed = o.startedAt ? Math.floor((now - o.startedAt) / 1000) : 0
-                const stdSec = o.menu.cookTime * 60
+              {cookingGroups.map(group => {
+                const g = GENRE[group.equip] || GENRE.stove
+                const minStarted = Math.min(...group.orders.map(o => o.startedAt || Date.now()))
+                const elapsed = Math.floor((now - minStarted) / 1000)
+                const cookTime = group.orders[0].menu.cookTime
+                const stdSec = cookTime * 60
                 const progress = Math.min((elapsed / stdSec) * 100, 100)
                 const isOver = elapsed > stdSec
+                const tableStr = group.orders.map(o => `${o.table}卓`).join('・')
+                const isMulti = group.orders.length > 1
+
                 return (
-                  <div key={o.id} style={{ borderTop: `4px solid ${g.border}`, backgroundColor: g.bg, borderRadius: '8px', padding: '7px 8px', marginBottom: '5px' }}>
+                  <div key={group.menuId} style={{
+                    borderTop: `4px solid ${g.border}`,
+                    backgroundColor: g.bg,
+                    borderRadius: '8px',
+                    padding: '7px 8px',
+                    marginBottom: '5px',
+                    border: isMulti ? '2px solid #22c55e' : 'none',
+                    borderTopWidth: '4px',
+                    borderTopColor: g.border,
+                  }}>
+                    {/* メニュー名 + まとめバッジ */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
                       <span style={{ color: '#60a5fa', fontSize: '11px' }}>▶</span>
-                      <span style={{ fontSize: '13px', fontWeight: '900', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.menu.name}</span>
+                      <span style={{ fontSize: '12px', fontWeight: '900', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{group.menuName}</span>
+                      {isMulti && (
+                        <span style={{ backgroundColor: 'rgba(34,197,94,0.2)', border: '1px solid #22c55e', color: '#4ade80', fontSize: '9px', fontWeight: '900', padding: '1px 4px', borderRadius: '10px', flexShrink: 0 }}>
+                          {group.orders.length}件
+                        </span>
+                      )}
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: '900', color: '#FFD700', lineHeight: 1, marginBottom: '4px' }}>{o.table}卓</div>
-                    <div style={{ width: '100%', height: '5px', backgroundColor: '#1f2937', borderRadius: '999px', overflow: 'hidden', marginBottom: '5px' }}>
+                    {/* 卓番（まとめ表示） */}
+                    <div style={{ fontSize: isMulti ? '14px' : '20px', fontWeight: '900', color: '#4ade80', lineHeight: 1.1, marginBottom: '4px' }}>
+                      {tableStr}
+                    </div>
+                    {/* 進捗バー */}
+                    <div style={{ width: '100%', height: '5px', backgroundColor: '#1f2937', borderRadius: '999px', overflow: 'hidden', marginBottom: '4px' }}>
                       <div style={{ height: '100%', width: `${progress}%`, backgroundColor: getProgressColor(progress, isOver), borderRadius: '999px', transition: 'width 1s' }} />
                     </div>
+                    {/* 経過時間 + 完了ボタン */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '9px', color: isOver ? '#ef4444' : '#6b7280' }}>{formatWait(elapsed)}</span>
-                      <button onClick={() => setStatus(o.id, 'served')}
+                      <span style={{ fontSize: '9px', color: isOver ? '#ef4444' : '#6b7280' }}>
+                        {isOver ? '超過' : '経過'}{formatWait(elapsed)}
+                      </span>
+                      <button
+                        onClick={() => setStatusBatch(group.orders.map(o => o.id), 'served')}
                         style={{ backgroundColor: '#16a34a', color: 'white', fontSize: '11px', fontWeight: 'bold', padding: '3px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}>
-                        完了
+                        {isMulti ? `全${group.orders.length}完了` : '完了'}
                       </button>
                     </div>
                   </div>
